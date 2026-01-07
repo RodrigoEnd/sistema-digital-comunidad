@@ -33,48 +33,32 @@ class BaseDatos:
             self.generar_datos_prueba()
     
     def generar_datos_prueba(self):
-        """Generar 198 nombres genéricos para pruebas"""
-        nombres = [
-            "Juan", "Maria", "Pedro", "Ana", "Luis", "Carmen", "Jose", "Rosa",
-            "Miguel", "Isabel", "Francisco", "Teresa", "Antonio", "Laura", "Manuel",
-            "Patricia", "Carlos", "Sofia", "Rafael", "Elena", "Angel", "Lucia"
-        ]
-        
-        apellidos = [
-            "Garcia", "Rodriguez", "Martinez", "Hernandez", "Lopez", "Gonzalez",
-            "Perez", "Sanchez", "Ramirez", "Torres", "Flores", "Rivera", "Gomez",
-            "Diaz", "Cruz", "Morales", "Reyes", "Jimenez", "Ruiz", "Alvarez"
+        """Generar 10 nombres de muestra para pruebas iniciales"""
+        nombres_muestra = [
+            "Juan Garcia Lopez",
+            "Maria Rodriguez Martinez",
+            "Pedro Hernandez Cruz",
+            "Ana Gonzalez Flores",
+            "Luis Martinez Gomez",
+            "Carmen Lopez Sanchez",
+            "Jose Perez Torres",
+            "Rosa Ramirez Morales",
+            "Miguel Diaz Rivera",
+            "Isabel Fernandez Ruiz"
         ]
         
         habitantes_temp = []
-        for i in range(198):
-            nombre = nombres[i % len(nombres)]
-            apellido1 = apellidos[i % len(apellidos)]
-            apellido2 = apellidos[(i + 7) % len(apellidos)]
-            
-            if i >= len(nombres) * len(apellidos):
-                # Agregar número para hacer únicos
-                nombre_completo = f"{nombre} {apellido1} {apellido2} {i // (len(nombres) * len(apellidos)) + 1}"
-            else:
-                nombre_completo = f"{nombre} {apellido1} {apellido2}"
-            
+        for i, nombre in enumerate(nombres_muestra, start=1):
             habitantes_temp.append({
-                'nombre': nombre_completo,
-                'folio': '',  # Se asignará al ordenar
+                'nombre': nombre,
+                'folio': f"HAB-{i:04d}",
                 'fecha_registro': datetime.now().strftime("%d/%m/%Y"),
                 'activo': True
             })
         
-        # Ordenar alfabéticamente
-        habitantes_temp.sort(key=lambda x: x['nombre'].lower())
-        
-        # Asignar folios
-        for idx, habitante in enumerate(habitantes_temp, start=1):
-            habitante['folio'] = f"HAB-{idx:04d}"
-        
         self.habitantes = habitantes_temp
         self.guardar_datos()
-        print(f"Base de datos creada con {len(self.habitantes)} habitantes")
+        print(f"Base de datos creada con {len(self.habitantes)} habitantes de muestra")
     
     def obtener_siguiente_folio(self):
         """Obtener el siguiente folio disponible"""

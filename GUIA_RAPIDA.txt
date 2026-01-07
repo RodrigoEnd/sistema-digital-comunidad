@@ -5,13 +5,24 @@
 ARCHIVOS CREADOS:
 -----------------
 src/
-  ├── base_datos.py          (Base de datos con 198 nombres)
+  ├── base_datos.py          (Base de datos con 10 nombres de muestra)
   ├── api_local.py           (Servidor API)
   ├── censo_habitantes.py    (Sistema de censo)
-  └── control_pagos.py       (Sistema de pagos)
+  ├── control_pagos.py       (Sistema de pagos)
+  └── seguridad.py           (Módulo de seguridad y encriptación)
 
 iniciar.ps1                  (Script de inicio)
 requirements.txt             (Dependencias)
+
+
+SEGURIDAD IMPLEMENTADA:
+-----------------------
+- Archivos cifrados con AES-256
+- Contraseñas hasheadas con bcrypt (12 rounds)
+- Datos guardados en AppData\Local\SistemaComunidad (oculto)
+- Verificación de integridad con HMAC
+- Archivos no editables externamente
+- Protección contra manipulación
 
 
 COMO INICIAR:
@@ -29,23 +40,23 @@ OPCION 2 - Manual:
 CARACTERISTICAS IMPLEMENTADAS:
 -------------------------------
 
-✓ Sistema de Folios:
+- Sistema de Folios:
   - Folios unicos HAB-0001, HAB-0002, etc.
   - Ordenamiento alfabetico automatico
   - Sincronizacion entre sistemas
 
-✓ Sistema de Pagos:
+- Sistema de Pagos:
   - NO solicita monto al agregar persona (usa el monto general)
   - Monto protegido con contraseña
   - Pagos parciales con historial (fecha y hora)
   - Busqueda en tiempo real
 
-✓ Sistema de Censo:
-  - 198 nombres de prueba generados
+- Sistema de Censo:
+  - 10 nombres de muestra incluidos
   - Busqueda por nombre o folio
   - Registro de nuevos habitantes
 
-✓ Sincronizacion Automatica:
+- Sincronizacion Automatica:
   - Si agregas alguien en PAGOS que no esta en CENSO
     -> Se agrega automaticamente al censo
   - Los folios se mantienen sincronizados
@@ -57,14 +68,25 @@ PRIMER USO:
 2. Iniciar API: python src/api_local.py
 3. Iniciar Pagos: python src/control_pagos.py
 4. Establecer contraseña (primera vez)
-5. ¡Listo para usar!
+5. Listo para usar
 
 
 DATOS DE PRUEBA:
 ----------------
-- 198 habitantes ya cargados en base de datos
+- 10 habitantes de muestra pre-cargados
 - Ordenados alfabeticamente
-- Con folios desde HAB-0001 hasta HAB-0198
+- Con folios desde HAB-0001 hasta HAB-0010
+
+
+UBICACION DE DATOS:
+-------------------
+Los archivos se guardan de forma segura y cifrada en:
+C:\Users\[TuUsuario]\AppData\Local\SistemaComunidad\
+
+Archivos protegidos:
+- base_datos_habitantes.json (cifrado)
+- datos_pagos.json (cifrado)
+- Carpeta oculta del sistema
 
 
 CONVERTIR A .EXE:
@@ -78,5 +100,5 @@ SOPORTE:
 --------
 - La API debe estar ejecutandose para sincronizacion
 - Si no hay API, se asignan folios temporales
-- Los datos se guardan en archivos JSON
-- Contraseña guardada de forma segura (hash SHA256)
+- Los datos se guardan cifrados y ocultos
+- Contraseña guardada de forma segura (bcrypt + salt)

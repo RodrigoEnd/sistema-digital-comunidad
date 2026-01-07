@@ -1,8 +1,9 @@
 # Dependencias para el Sistema de Control de Pagos
 # Para ejecutar: pip install -r requirements.txt
 
-# PyInstaller para crear el .exe
-# Dependencias del Sistema de Gestion Comunitaria
+# Seguridad y encriptación
+cryptography>=41.0.0
+bcrypt>=4.1.0
 
 # API Local y servidor
 flask>=3.0.0
