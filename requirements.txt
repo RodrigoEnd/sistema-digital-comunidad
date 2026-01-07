@@ -1,0 +1,17 @@
+# Dependencias para el Sistema de Control de Pagos
+# Para ejecutar: pip install -r requirements.txt
+
+# PyInstaller para crear el .exe
+# Dependencias del Sistema de Gestion Comunitaria
+
+# API Local y servidor
+flask>=3.0.0
+flask-cors>=4.0.0
+
+# Cliente HTTP para comunicacion entre sistemas
+requests>=2.31.0
+
+# Para generar archivos .exe
+pyinstaller==6.3.0
+
+# Tkinter viene incluido con Python, no requiere instalación adicional

@@ -1,0 +1,82 @@
+==============================================
+   SISTEMA COMPLETADO - GUIA RAPIDA
+==============================================
+
+ARCHIVOS CREADOS:
+-----------------
+src/
+  ├── base_datos.py          (Base de datos con 198 nombres)
+  ├── api_local.py           (Servidor API)
+  ├── censo_habitantes.py    (Sistema de censo)
+  └── control_pagos.py       (Sistema de pagos)
+
+iniciar.ps1                  (Script de inicio)
+requirements.txt             (Dependencias)
+
+
+COMO INICIAR:
+-------------
+
+OPCION 1 - Script Automatico:
+  ./iniciar.ps1
+
+OPCION 2 - Manual:
+  1. python src/api_local.py        (Primero el servidor)
+  2. python src/censo_habitantes.py (Censo - opcional)
+  3. python src/control_pagos.py    (Control de pagos)
+
+
+CARACTERISTICAS IMPLEMENTADAS:
+-------------------------------
+
+✓ Sistema de Folios:
+  - Folios unicos HAB-0001, HAB-0002, etc.
+  - Ordenamiento alfabetico automatico
+  - Sincronizacion entre sistemas
+
+✓ Sistema de Pagos:
+  - NO solicita monto al agregar persona (usa el monto general)
+  - Monto protegido con contraseña
+  - Pagos parciales con historial (fecha y hora)
+  - Busqueda en tiempo real
+
+✓ Sistema de Censo:
+  - 198 nombres de prueba generados
+  - Busqueda por nombre o folio
+  - Registro de nuevos habitantes
+
+✓ Sincronizacion Automatica:
+  - Si agregas alguien en PAGOS que no esta en CENSO
+    -> Se agrega automaticamente al censo
+  - Los folios se mantienen sincronizados
+
+
+PRIMER USO:
+-----------
+1. Ejecutar: pip install -r requirements.txt
+2. Iniciar API: python src/api_local.py
+3. Iniciar Pagos: python src/control_pagos.py
+4. Establecer contraseña (primera vez)
+5. ¡Listo para usar!
+
+
+DATOS DE PRUEBA:
+----------------
+- 198 habitantes ya cargados en base de datos
+- Ordenados alfabeticamente
+- Con folios desde HAB-0001 hasta HAB-0198
+
+
+CONVERTIR A .EXE:
+-----------------
+pyinstaller --onefile --windowed --name="ControlPagos" src/control_pagos.py
+pyinstaller --onefile --windowed --name="CensoHabitantes" src/censo_habitantes.py
+pyinstaller --onefile --name="APILocal" src/api_local.py
+
+
+SOPORTE:
+--------
+- La API debe estar ejecutandose para sincronizacion
+- Si no hay API, se asignan folios temporales
+- Los datos se guardan en archivos JSON
+- Contraseña guardada de forma segura (hash SHA256)
