@@ -3,11 +3,11 @@ from tkinter import ttk, messagebox, filedialog
 import json
 import os
 from datetime import datetime
-import hashlib
 import requests
 import subprocess
 import sys
 import time
+from seguridad import seguridad
 
 class SistemaControlPagos:
     # Temas
@@ -63,6 +63,7 @@ class SistemaControlPagos:
         self.proyecto_actual = "Proyecto Comunitario 2026"
         self.mostrar_total = False
         self.archivo_datos = "datos_pagos.json"
+        self.password_archivo = "SistemaComunidad2026"  # Contraseña para cifrado de archivos
         self.password_hash = None
         self.api_url = "http://127.0.0.1:5000/api"
         self.fila_animada = None
@@ -116,8 +117,8 @@ class SistemaControlPagos:
 
     
     def hash_password(self, password):
-        """Crear hash de la contraseña"""
-        return hashlib.sha256(password.encode()).hexdigest()
+        """Crear hash seguro de la contraseña con bcrypt"""
+        return seguridad.hash_password(password).decode('utf-8')
     
     def verificar_password_inicial(self):
         """Verificar si existe contraseña, si no, crearla"""
@@ -197,7 +198,7 @@ class SistemaControlPagos:
         
         def verificar():
             password = pass_entry.get()
-            if self.hash_password(password) == self.password_hash:
+            if seguridad.verificar_password(password, self.password_hash):
                 resultado['success'] = True
                 dialog.destroy()
             else:
@@ -406,9 +407,6 @@ class SistemaControlPagos:
             data = response.json()
             habitantes = data.get('habitantes', [])
             
-            print(f"DEBUG: API devolvió {len(habitantes)} habitantes")
-            print(f"DEBUG: Total en respuesta: {data.get('total', 'N/A')}")
-            
             existentes = {p.get('nombre', '').lower(): p for p in coop.get('personas', [])}
             for hab in habitantes:
                 nombre = hab.get('nombre', '').strip()
@@ -441,10 +439,8 @@ class SistemaControlPagos:
     def refrescar_interfaz_cooperacion(self):
         coop = self.obtener_cooperacion_activa()
         if not coop:
-            print("DEBUG: No hay cooperación activa")
             return
         self.personas = coop.setdefault('personas', [])
-        print(f"DEBUG refrescar_interfaz: Cargadas {len(self.personas)} personas de cooperación")
         self.monto_cooperacion = coop.get('monto_cooperacion', self.monto_cooperacion)
         self.proyecto_actual = coop.get('proyecto', self.proyecto_actual)
         if hasattr(self, 'monto_var'):
@@ -1058,7 +1054,6 @@ class SistemaControlPagos:
         self.actualizar_tabla()
     
     def actualizar_tabla(self):
-        print(f"DEBUG actualizar_tabla: Actualizando con {len(self.personas)} personas")
         # Limpiar tabla
         for item in self.tree.get_children():
             self.tree.delete(item)
@@ -1067,19 +1062,13 @@ class SistemaControlPagos:
         personas_mostrar = self.personas
         criterio = self.search_var.get().strip().lower()
         
-        print(f"DEBUG: Criterio de búsqueda: '{criterio}'")
-        
         if criterio:
             personas_mostrar = [p for p in self.personas 
                                if criterio in p['nombre'].lower() or 
                                criterio in p.get('folio', '').lower()]
-            print(f"DEBUG: Después de filtrar quedan {len(personas_mostrar)} personas")
         
-        print(f"DEBUG: Insertando {len(personas_mostrar)} personas en la tabla")
-        insertadas = 0
         # Agregar personas
         for persona in personas_mostrar:
-            insertadas += 1
             # Migrar datos antiguos si es necesario
             if 'monto_esperado' not in persona:
                 persona['monto_esperado'] = persona.get('monto', 100)
@@ -1119,10 +1108,6 @@ class SistemaControlPagos:
                                   ultimo_pago,
                                   persona.get('notas', '')),
                            tags=(tag,))
-        
-        print(f"DEBUG: Se insertaron {insertadas} filas en el tree")
-        items_en_tree = len(self.tree.get_children())
-        print(f"DEBUG: Items visibles en tree: {items_en_tree}")
         
         # Actualizar contador de personas
         total_mostradas = len(personas_mostrar)
@@ -1167,28 +1152,28 @@ class SistemaControlPagos:
                 'tamaño': self.tamaño_actual.get(),
                 'fecha_guardado': datetime.now().strftime("%d/%m/%Y %H:%M:%S")
             }
-            with open(self.archivo_datos, 'w', encoding='utf-8') as f:
-                json.dump(datos, f, indent=4, ensure_ascii=False)
-            if mostrar_alerta:
-                messagebox.showinfo("Exito", "Datos guardados correctamente")
+            
+            # Guardar cifrado en ubicación segura
+            if seguridad.cifrar_archivo(datos, self.archivo_datos, self.password_archivo):
+                if mostrar_alerta:
+                    messagebox.showinfo("Exito", "Datos guardados correctamente")
+            else:
+                if mostrar_alerta:
+                    messagebox.showerror("Error", "Error al guardar los datos")
         except Exception as e:
             messagebox.showerror("Error", f"Error al guardar: {str(e)}")
 
     def cargar_datos(self):
         try:
-            if os.path.exists(self.archivo_datos):
-                with open(self.archivo_datos, 'r', encoding='utf-8') as f:
-                    datos = json.load(f)
-                self.password_hash = datos.get('password_hash', self.password_hash)
-                if 'cooperaciones' in datos:
-                    self.cooperaciones = datos.get('cooperaciones', [])
-                    self.coop_activa_id = datos.get('cooperacion_activa')
-                    self.tema_guardado = datos.get('tema', 'claro')
-                    self.tamaño_guardado = datos.get('tamaño', 'normal')
-                    print(f"DEBUG cargar_datos: Cargadas {len(self.cooperaciones)} cooperaciones")
-                    if self.cooperaciones:
-                        for i, coop in enumerate(self.cooperaciones):
-                            print(f"  Cooperación {i+1}: {coop['nombre']} - {len(coop.get('personas', []))} personas")
+            if seguridad.archivo_existe(self.archivo_datos):
+                datos = seguridad.descifrar_archivo(self.archivo_datos, self.password_archivo)
+                if datos:
+                    self.password_hash = datos.get('password_hash', self.password_hash)
+                    if 'cooperaciones' in datos:
+                        self.cooperaciones = datos.get('cooperaciones', [])
+                        self.coop_activa_id = datos.get('cooperacion_activa')
+                        self.tema_guardado = datos.get('tema', 'claro')
+                        self.tamaño_guardado = datos.get('tamaño', 'normal')
             if not self.cooperaciones:
                 nueva = {
                     'id': f"coop-{int(time.time())}",
@@ -1199,7 +1184,6 @@ class SistemaControlPagos:
                 }
                 self.cooperaciones = [nueva]
                 self.coop_activa_id = nueva['id']
-                print("DEBUG cargar_datos: Creada cooperación nueva vacía")
         except Exception as e:
             print(f"Error al cargar datos: {str(e)}")
 

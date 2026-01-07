@@ -1,32 +1,17 @@
 import json
 import os
 from datetime import datetime
+from seguridad import seguridad
 
 class BaseDatos:
     def __init__(self, archivo="base_datos_habitantes.json"):
-        # Siempre usar el archivo de la raíz del proyecto (dos niveles arriba de src/)
-        if not os.path.isabs(archivo):
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            parent_dir = os.path.dirname(script_dir)  # sistema-digital-comunidad/
-            root_dir = os.path.dirname(parent_dir)  # Servicio Social/
-            archivo_root = os.path.join(root_dir, archivo)
-            
-            # Si existe en la raíz, usarlo
-            if os.path.exists(archivo_root):
-                archivo = archivo_root
-                print(f"Usando base de datos: {archivo}")
-            else:
-                # Si no, buscar en carpeta padre de src
-                archivo_parent = os.path.join(parent_dir, archivo)
-                if os.path.exists(archivo_parent):
-                    archivo = archivo_parent
-                    print(f"Usando base de datos: {archivo}")
-        
         self.archivo = archivo
+        self.password = "SistemaComunidad2026"  # Contraseña para cifrado de archivos
         self.habitantes = []
         self.cargar_datos()
         
         print(f"Base de datos cargada: {len(self.habitantes)} habitantes")
+        print(f"Ubicación segura: {seguridad.ruta_segura}")
         
         # Crear datos de prueba si no existen
         if not self.habitantes:
@@ -135,7 +120,7 @@ class BaseDatos:
         return self.habitantes
     
     def guardar_datos(self):
-        """Guardar datos en archivo JSON"""
+        """Guardar datos cifrados en ubicación segura"""
         try:
             datos = {
                 'habitantes': self.habitantes,
@@ -143,22 +128,22 @@ class BaseDatos:
                 'fecha_actualizacion': datetime.now().strftime("%d/%m/%Y %H:%M:%S")
             }
             
-            with open(self.archivo, 'w', encoding='utf-8') as f:
-                json.dump(datos, f, indent=4, ensure_ascii=False)
-            
-            return True
+            return seguridad.cifrar_archivo(datos, self.archivo, self.password)
         except Exception as e:
             print(f"Error al guardar: {str(e)}")
             return False
     
     def cargar_datos(self):
-        """Cargar datos desde archivo JSON"""
+        """Cargar datos descifrados desde ubicación segura"""
         try:
-            if os.path.exists(self.archivo):
-                with open(self.archivo, 'r', encoding='utf-8') as f:
-                    datos = json.load(f)
-                
-                self.habitantes = datos.get('habitantes', [])
+            if seguridad.archivo_existe(self.archivo):
+                datos = seguridad.descifrar_archivo(self.archivo, self.password)
+                if datos:
+                    self.habitantes = datos.get('habitantes', [])
+                else:
+                    self.habitantes = []
+            else:
+                self.habitantes = []
         except Exception as e:
             print(f"Error al cargar: {str(e)}")
             self.habitantes = []
