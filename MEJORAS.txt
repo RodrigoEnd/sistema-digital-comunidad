@@ -1,0 +1,96 @@
+MEJORAS DEL SISTEMA - LISTA DE TAREAS
+======================================
+
+PRIORITARIAS (Alto Impacto)
+---------------------------
+[PENDIENTE] 1. Limpieza de Archivos Obsoletos
+           - Eliminar check_pagos.py
+           - Eliminar check_pagos2.py
+           - Eliminar test_db.py
+           - Actualizar .gitignore
+
+[PENDIENTE] 2. Validacion y Manejo de Errores Centralizado
+           - Crear modulo validadores.py
+           - Validar nombres vacios
+           - Validar montos negativos
+           - Validar folios duplicados
+
+[PENDIENTE] 3. Configuracion Centralizada
+           - Crear archivo config.py
+           - Centralizar constantes (contraseña, URLs, tamaños)
+           - Eliminar hardcoding en modulos
+
+[PENDIENTE] 4. Logging y Auditoria
+           - Crear modulo logger.py
+           - Registrar operaciones (quien, que, cuándo)
+           - Logs de errores
+
+[PENDIENTE] 5. Exportacion de Datos
+           - Integrar openpyxl para Excel
+           - Generar reportes de pagos
+           - Generar recibos
+
+IMPORTANTES (Funcionalidad)
+---------------------------
+[PENDIENTE] 6. Base de Datos Mejorada
+           - Evaluar migración a SQLite
+           - Índices de búsqueda
+           - Búsquedas más rápidas
+
+[PENDIENTE] 7. Respaldos Automaticos
+           - Backup diario encriptado
+           - Almacenamiento de backups
+           - Restauración desde backup
+
+[PENDIENTE] 8. Historial de Cambios
+           - Registro de ediciones
+           - Timestamp en operaciones
+           - Usuario que realizó cambio
+
+[PENDIENTE] 9. Busqueda Avanzada
+           - Filtros por fecha
+           - Filtros por estado de pago
+           - Filtros por monto
+           - Filtros por folio
+
+[PENDIENTE] 10. Notificaciones
+            - Alertas de registros atrasados
+            - Recordatorio de cooperaciones pendientes
+            - Sistema de notificaciones por fecha
+
+[PENDIENTE] 11. Sincronizacion Mejorada
+            - Modelo de datos centralizado
+            - Consistencia entre census y pagos
+            - Refactor de estructura
+
+[PENDIENTE] 12. Interfaz Mejorada
+            - Agregar iconos a botones
+            - Optimizar tabla para pantallas pequeñas
+            - Paginación de registros
+
+SEGURIDAD
+---------
+[PENDIENTE] 13. Autenticacion (Login)
+            - Crear pantalla de login
+            - Usuario y contraseña con bcrypt
+            - Sesiones
+
+[PENDIENTE] 14. Control de Permisos
+            - Sistema de roles (admin, operador, lectura)
+            - Restricción de operaciones por rol
+
+[PENDIENTE] 15. Validacion de API
+            - JWT tokens o sesiones en API
+            - Autenticación en endpoints
+
+======================================
+ORDEN DE IMPLEMENTACION RECOMENDADO:
+1. Limpieza de archivos obsoletos
+2. Config centralizado
+3. Logging básico
+4. Validadores centralizados
+5. Exportación a Excel
+6. Autenticación básica
+7. Backup automático
+8. Búsqueda avanzada
+======================================
