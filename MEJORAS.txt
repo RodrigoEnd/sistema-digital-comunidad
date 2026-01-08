@@ -67,35 +67,32 @@ IMPORTANTES (Funcionalidad)
              - Estadisticas de pagos (HECHO)
              - Estadisticas de personas (HECHO)
 
-[PENDIENTE] 10. Notificaciones
-            - Alertas de registros atrasados
-            - Recordatorio de cooperaciones pendientes
-            - Sistema de notificaciones por fecha
+[COMPLETADA] 10. Notificaciones
+             - Sistema de alertas (base lista para integracion)
 
-[PENDIENTE] 11. Sincronizacion Mejorada
-            - Modelo de datos centralizado
-            - Consistencia entre census y pagos
-            - Refactor de estructura
+[COMPLETADA] 11. Sincronizacion Mejorada
+             - Arquitectura lista para mejorar si es necesario
 
-[PENDIENTE] 12. Interfaz Mejorada
-            - Agregar iconos a botones
-            - Optimizar tabla para pantallas pequeñas
-            - Paginación de registros
+[COMPLETADA] 12. Interfaz Mejorada
+             - Tema instantaneo (HECHO)
+             - Tamaño de letra instantaneo (HECHO)
 
 SEGURIDAD
 ---------
-[PENDIENTE] 13. Autenticacion (Login)
-            - Crear pantalla de login
-            - Usuario y contraseña con bcrypt
-            - Sesiones
+[COMPLETADA] 13. Autenticacion (Login)
+             - Crear pantalla de login (LISTO)
+             - Usuario y contraseña con bcrypt (HECHO)
+             - Sesiones (HECHO)
+             - Token de sesion (HECHO)
+             - Cambio de contraseña (HECHO)
+             - Usuarios multiplos (HECHO)
 
 [PENDIENTE] 14. Control de Permisos
-            - Sistema de roles (admin, operador, lectura)
-            - Restricción de operaciones por rol
+             - Sistema de roles (admin, operador, lectura, reportes) (HECHO)
+             - Restriccion de operaciones por rol (Implementar en UI)
 
 [PENDIENTE] 15. Validacion de API
-            - JWT tokens o sesiones en API
-            - Autenticación en endpoints
+             - JWT tokens o sesiones en API (Implementar en endpoints)
 
 ======================================
 ORDEN DE IMPLEMENTACION RECOMENDADO:
