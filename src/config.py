@@ -10,6 +10,9 @@ API_URL = "http://127.0.0.1:5000/api"
 API_PORT = 5000
 API_HOST = "127.0.0.1"
 
+# Modo offline: si es True no se requiere la API para operar
+MODO_OFFLINE = True
+
 # Seguridad
 PASSWORD_CIFRADO = "SistemaComunidad2026"
 SALT_CIFRADO = b'SistemaComunidad2026Salt'

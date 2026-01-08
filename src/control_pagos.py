@@ -9,7 +9,7 @@ import sys
 import time
 from seguridad import seguridad
 from logger import registrar_operacion, registrar_error, registrar_transaccion
-from config import TEMAS, TAMAÑOS_LETRA, API_URL, PASSWORD_CIFRADO, ARCHIVO_PAGOS
+from config import TEMAS, TAMAÑOS_LETRA, API_URL, PASSWORD_CIFRADO, ARCHIVO_PAGOS, MODO_OFFLINE
 from validadores import validar_nombre, validar_monto, ErrorValidacion
 from exportador import ExportadorExcel
 from backups import GestorBackups
@@ -53,6 +53,7 @@ class SistemaControlPagos:
         self.buscador = BuscadorAvanzado()  # Buscador avanzado
         self.gestor_backups = GestorBackups()  # Gestor de backups
         self.tree_persona_map = {}  # Mapea iids del tree a objetos persona
+        self.permisos_rol = self.gestor_auth.ROLES if self.gestor_auth else {}
         
         # Cargar datos si existen (incluyendo tema y tamaño guardados)
         self.cargar_datos()
@@ -90,8 +91,22 @@ class SistemaControlPagos:
         """Configurar usuario autenticado"""
         self.usuario_actual = usuario
         self.gestor_auth = gestor_auth
+        self.permisos_rol = self.gestor_auth.ROLES if self.gestor_auth else {}
         registrar_operacion('LOGIN', 'Usuario inició sesión', 
             {'usuario': usuario['nombre'], 'rol': usuario['rol']}, usuario['nombre'])
+
+    def _tiene_permiso(self, permiso):
+        """Verifica permisos según rol actual"""
+        if not self.usuario_actual:
+            return True  # fallback
+        rol = self.usuario_actual.get('rol')
+        if not rol or rol not in self.permisos_rol:
+            return True
+        permisos = self.permisos_rol[rol].get('permisos', [])
+        if '*' in permisos or permiso in permisos:
+            return True
+        messagebox.showerror("Permisos", f"Tu rol no permite realizar esta acción ({permiso}).")
+        return False
     
     def obtener_colores(self):
         """Obtener paleta de colores del tema actual"""
@@ -719,6 +734,8 @@ class SistemaControlPagos:
         
     def sincronizar_con_censo(self, nombre):
         """Sincronizar persona con la base de datos de censo - buscar folio permanente"""
+        if MODO_OFFLINE:
+            return self.generar_folio_local()
         try:
             # Buscar por nombre exacto
             response = requests.get(f"{self.api_url}/habitantes/nombre/{nombre}",
@@ -759,6 +776,8 @@ class SistemaControlPagos:
 
     def asegurar_api_activa(self):
         """Comprueba la API y la levanta si no está activa"""
+        if MODO_OFFLINE:
+            return True
         if self.verificar_api():
             return True
         try:
@@ -774,13 +793,32 @@ class SistemaControlPagos:
         return False
 
     def verificar_api(self):
+        if MODO_OFFLINE:
+            return True
         try:
             response = requests.get(f"{self.api_url}/ping", timeout=1.5)
             return response.status_code == 200
         except:
             return False
+
+    def generar_folio_local(self):
+        """Genera un folio local único cuando no hay API"""
+        base = "LOC"
+        intento = 0
+        while True:
+            sufijo = int(time.time() * 1000) % 1000000
+            folio = f"{base}-{sufijo:06d}"
+            if not any(p.get('folio') == folio for p in self.personas):
+                return folio
+            intento += 1
+            if intento > 3:
+                folio = f"{base}-{sufijo:06d}-{intento}"
+                if not any(p.get('folio') == folio for p in self.personas):
+                    return folio
     
     def actualizar_monto(self):
+        if not self._tiene_permiso('editar'):
+            return
         # Solicitar contraseña
         if not self.solicitar_password():
             messagebox.showwarning("Cancelado", "Operacion cancelada")
@@ -805,6 +843,8 @@ class SistemaControlPagos:
             self.monto_var.set(self.monto_cooperacion)
     
     def agregar_persona(self):
+        if not self._tiene_permiso('crear'):
+            return
         # Ventana para agregar persona
         dialog = tk.Toplevel(self.root)
         dialog.title("Agregar Nueva Persona")
@@ -842,8 +882,8 @@ class SistemaControlPagos:
             # Sincronizar con API (verificar/agregar en censo)
             folio = self.sincronizar_con_censo(nombre)
             if not folio:
-                messagebox.showerror("Error", "Error al sincronizar con el censo")
-                return
+                messagebox.showwarning("Aviso", "No se pudo obtener folio desde censo. Se generará folio local.")
+                folio = self.generar_folio_local()
             
             persona = {
                 'nombre': nombre,
@@ -873,6 +913,8 @@ class SistemaControlPagos:
         nombre_entry.focus()
     
     def editar_persona(self):
+        if not self._tiene_permiso('editar'):
+            return
         seleccion = self.tree.selection()
         if not seleccion:
             messagebox.showwarning("Advertencia", "Por favor seleccione una persona")
@@ -945,6 +987,8 @@ class SistemaControlPagos:
         ttk.Button(dialog, text="Guardar Cambios", command=guardar).pack(pady=15)
     
     def eliminar_persona(self):
+        if not self._tiene_permiso('editar'):
+            return
         seleccion = self.tree.selection()
         if not seleccion:
             messagebox.showwarning("Advertencia", "Por favor seleccione una persona")
@@ -974,6 +1018,8 @@ class SistemaControlPagos:
     
     def registrar_pago(self):
         """Registrar un pago (puede ser parcial)"""
+        if not self._tiene_permiso('pagar'):
+            return
         seleccion = self.tree.selection()
         if not seleccion:
             messagebox.showwarning("Advertencia", "Por favor seleccione una persona")
@@ -1035,7 +1081,8 @@ class SistemaControlPagos:
                 pago = {
                     'monto': monto_pago,
                     'fecha': datetime.now().strftime("%d/%m/%Y"),
-                    'hora': datetime.now().strftime("%H:%M:%S")
+                    'hora': datetime.now().strftime("%H:%M:%S"),
+                    'usuario': self.usuario_actual['nombre'] if self.usuario_actual else 'Sistema'
                 }
                 
                 if 'pagos' not in persona:
@@ -1367,6 +1414,8 @@ class SistemaControlPagos:
     
     def exportar_excel(self):
         """Exportar cooperación actual a Excel"""
+        if not self._tiene_permiso('exportar'):
+            return
         if not self.personas:
             messagebox.showwarning("Advertencia", "No hay datos para exportar")
             return
@@ -1404,6 +1453,8 @@ class SistemaControlPagos:
     
     def crear_backup(self):
         """Crear un backup completo del sistema"""
+        if not self._tiene_permiso('exportar'):
+            return
         try:
             resultado = self.gestor_backups.crear_backup_completo()
             if resultado['exito']:
