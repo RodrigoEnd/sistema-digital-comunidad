@@ -67,6 +67,7 @@ class SistemaControlPagos:
         self.password_hash = None
         self.api_url = "http://127.0.0.1:5000/api"
         self.fila_animada = None
+        self.guardado_pendiente = None  # Timer para debounce de guardado
         
         # Cargar datos si existen (incluyendo tema y tamaño guardados)
         self.cargar_datos()
@@ -567,7 +568,7 @@ class SistemaControlPagos:
         ttk.Button(control_frame, text="Eliminar Seleccionado", command=self.eliminar_persona, width=16).pack(side=tk.LEFT, padx=5)
         ttk.Button(control_frame, text="Registrar Pago", command=self.registrar_pago, width=16).pack(side=tk.LEFT, padx=5)
         ttk.Button(control_frame, text="Ver Historial", command=self.ver_historial, width=14).pack(side=tk.LEFT, padx=5)
-        ttk.Button(control_frame, text="Guardar Datos", command=self.guardar_datos, width=14).pack(side=tk.LEFT, padx=5)
+        ttk.Button(control_frame, text="Guardar Datos", command=lambda: self.guardar_datos(inmediato=True), width=14).pack(side=tk.LEFT, padx=5)
         ttk.Button(control_frame, text="Sincronizar con Censo", command=self.sincronizar_coop_con_censo, width=18).pack(side=tk.LEFT, padx=5)
         
         # Botón para mostrar/ocultar total
@@ -679,9 +680,15 @@ class SistemaControlPagos:
             if response.status_code == 200:
                 data = response.json()
                 if data['success'] and data['habitante']:
-                    return data['habitante']['folio']
-        except:
-            pass
+                    folio = data['habitante']['folio']
+                    # Verificar que el folio no esté duplicado en esta cooperación
+                    if not any(p.get('folio') == folio and p['nombre'].lower() != nombre.lower() for p in self.personas):
+                        return folio
+                    else:
+                        print(f"Advertencia: Folio {folio} ya usado en cooperación por otra persona")
+                        return None
+        except Exception as e:
+            print(f"Error al buscar en censo: {e}")
         
         # Si no existe, intentar agregarlo al censo
         try:
@@ -691,11 +698,17 @@ class SistemaControlPagos:
             if response.status_code == 200:
                 data = response.json()
                 if data['success'] and data['habitante']:
-                    return data['habitante']['folio']
-        except:
-            pass
+                    folio = data['habitante']['folio']
+                    # Verificar que el folio no esté duplicado
+                    if not any(p.get('folio') == folio for p in self.personas):
+                        return folio
+                    else:
+                        print(f"Advertencia: Folio {folio} duplicado")
+                        return None
+        except Exception as e:
+            print(f"Error al agregar al censo: {e}")
         
-        # Si todo falla, no retornar nada - el usuario será avisado
+        # Si todo falla, no retornar nada
         return None
 
     def asegurar_api_activa(self):
@@ -1171,8 +1184,21 @@ class SistemaControlPagos:
         self.total_pendiente_label.config(text=f"Total Pendiente: ${total_pendiente:.2f}")
         self.personas_pagadas_label.config(text=f"Personas que pagaron completo: {personas_pagadas} de {len(self.personas)}")
     
-    def guardar_datos(self, mostrar_alerta=True):
+    def guardar_datos(self, mostrar_alerta=True, inmediato=False):
+        """Guardar datos con debounce para evitar conflictos"""
+        if inmediato:
+            self._ejecutar_guardado(mostrar_alerta)
+        else:
+            # Cancelar guardado pendiente
+            if self.guardado_pendiente:
+                self.root.after_cancel(self.guardado_pendiente)
+            # Programar nuevo guardado en 500ms
+            self.guardado_pendiente = self.root.after(500, lambda: self._ejecutar_guardado(mostrar_alerta))
+    
+    def _ejecutar_guardado(self, mostrar_alerta=True):
+        """Ejecuta el guardado real de datos"""
         try:
+            self.guardado_pendiente = None
             coop = self.obtener_cooperacion_activa()
             if coop:
                 coop['proyecto'] = self.proyecto_var.get()
@@ -1195,7 +1221,8 @@ class SistemaControlPagos:
                 if mostrar_alerta:
                     messagebox.showerror("Error", "Error al guardar los datos")
         except Exception as e:
-            messagebox.showerror("Error", f"Error al guardar: {str(e)}")
+            if mostrar_alerta:
+                messagebox.showerror("Error", f"Error al guardar: {str(e)}")
 
     def cargar_datos(self):
         try:
