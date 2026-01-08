@@ -470,6 +470,48 @@ class SistemaControlPagos:
         except Exception as e:
             if mostrar_mensaje:
                 messagebox.showerror("Error", f"No se pudo sincronizar con el censo: {e}")
+    
+    def corregir_folios(self):
+        """Detecta y corrige folios duplicados sincronizando con el censo"""
+        from utilidades import detectar_folios_duplicados, corregir_folios_duplicados
+        
+        # Detectar duplicados
+        duplicados = detectar_folios_duplicados(self.personas)
+        
+        if not duplicados:
+            messagebox.showinfo("Sin Problemas", "No se encontraron folios duplicados en esta cooperación")
+            return
+        
+        # Mostrar información de duplicados
+        mensaje_duplicados = "Folios duplicados encontrados:\n\n"
+        for folio, nombres in duplicados.items():
+            mensaje_duplicados += f"Folio {folio}:\n"
+            for nombre in nombres:
+                mensaje_duplicados += f"  - {nombre}\n"
+            mensaje_duplicados += "\n"
+        
+        mensaje_duplicados += "\n¿Desea corregir automáticamente sincronizando con el censo?"
+        
+        if not messagebox.askyesno("Folios Duplicados Detectados", mensaje_duplicados):
+            return
+        
+        # Corregir
+        resultado = corregir_folios_duplicados(self.personas, self.api_url)
+        
+        if resultado['exito']:
+            self.actualizar_tabla()
+            self.guardar_datos(mostrar_alerta=False, inmediato=True)
+            
+            mensaje = f"{resultado['mensaje']}\n\n"
+            mensaje += f"Duplicados encontrados: {resultado.get('duplicados_encontrados', 0)}\n"
+            mensaje += f"Folios corregidos: {resultado.get('corregidos', 0)}"
+            
+            if resultado.get('errores'):
+                mensaje += f"\n\nErrores: {len(resultado['errores'])}"
+            
+            messagebox.showinfo("Corrección Completada", mensaje)
+        else:
+            messagebox.showerror("Error", f"Error al corregir folios: {resultado.get('error', 'Desconocido')}")
 
     def refrescar_interfaz_cooperacion(self):
         coop = self.obtener_cooperacion_activa()
@@ -494,7 +536,7 @@ class SistemaControlPagos:
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
         main_frame.columnconfigure(0, weight=1)
-        main_frame.rowconfigure(4, weight=1)  # Fila 4 es donde está la tabla
+        main_frame.rowconfigure(5, weight=1)  # Fila 5 es donde está la tabla
         
         tamaños = self.obtener_tamaños()
         colores = self.obtener_colores()
@@ -569,15 +611,21 @@ class SistemaControlPagos:
         ttk.Button(control_frame, text="Registrar Pago", command=self.registrar_pago, width=16).pack(side=tk.LEFT, padx=5)
         ttk.Button(control_frame, text="Ver Historial", command=self.ver_historial, width=14).pack(side=tk.LEFT, padx=5)
         ttk.Button(control_frame, text="Guardar Datos", command=lambda: self.guardar_datos(inmediato=True), width=14).pack(side=tk.LEFT, padx=5)
-        ttk.Button(control_frame, text="Sincronizar con Censo", command=self.sincronizar_coop_con_censo, width=18).pack(side=tk.LEFT, padx=5)
+        
+        # Segunda fila de botones
+        control_frame2 = ttk.Frame(main_frame)
+        control_frame2.grid(row=3, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
+        
+        ttk.Button(control_frame2, text="Sincronizar con Censo", command=self.sincronizar_coop_con_censo, width=18).pack(side=tk.LEFT, padx=5)
+        ttk.Button(control_frame2, text="Corregir Folios Duplicados", command=self.corregir_folios, width=20).pack(side=tk.LEFT, padx=5)
         
         # Botón para mostrar/ocultar total
-        self.btn_toggle_total = ttk.Button(control_frame, text="Mostrar Total Recaudado", command=self.toggle_total, width=20)
+        self.btn_toggle_total = ttk.Button(control_frame2, text="Mostrar Total Recaudado", command=self.toggle_total, width=20)
         self.btn_toggle_total.pack(side=tk.RIGHT, padx=5)
         
         # ===== PANEL DE TOTAL (OCULTO INICIALMENTE) =====
         self.total_frame = ttk.LabelFrame(main_frame, text="Resumen Financiero", padding="10")
-        self.total_frame.grid(row=3, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
+        self.total_frame.grid(row=4, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
         self.total_frame.grid_remove()  # Ocultar inicialmente
         
         self.total_pagado_label = ttk.Label(self.total_frame, text="Total Recaudado: $0.00", 
@@ -594,7 +642,7 @@ class SistemaControlPagos:
         
         # ===== TABLA =====
         table_frame = ttk.Frame(main_frame)
-        table_frame.grid(row=4, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        table_frame.grid(row=5, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         table_frame.columnconfigure(0, weight=1)
         table_frame.rowconfigure(0, weight=1)
         

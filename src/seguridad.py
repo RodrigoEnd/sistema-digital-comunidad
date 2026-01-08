@@ -52,7 +52,8 @@ class SeguridadManager:
         return base64.urlsafe_b64encode(clave)
     
     def cifrar_archivo(self, datos, nombre_archivo, password):
-        """Cifra y guarda un archivo JSON con reintentos"""
+        """Cifra y guarda un archivo JSON con escritura atomica"""
+        import tempfile
         try:
             ruta_completa = os.path.join(self.ruta_segura, nombre_archivo)
             
@@ -69,44 +70,73 @@ class SeguridadManager:
             h = hmac.new(password.encode(), datos_cifrados, hashlib.sha256)
             hmac_digest = h.hexdigest()
             
-            # Guardar con reintentos en caso de archivo bloqueado
+            # Contenido final
             contenido_a_guardar = hmac_digest.encode() + b'\n' + datos_cifrados
-            max_intentos = 3
             
-            for intento in range(max_intentos):
+            # Crear backup del archivo actual si existe
+            if os.path.exists(ruta_completa):
                 try:
-                    # Si el archivo existe, crear backup primero
-                    if os.path.exists(ruta_completa):
+                    backup_ruta = ruta_completa + '.backup'
+                    # Eliminar backup anterior si existe
+                    if os.path.exists(backup_ruta):
                         try:
-                            backup_ruta = ruta_completa + '.bak'
-                            if os.path.exists(backup_ruta):
-                                os.remove(backup_ruta)
-                            shutil.copy2(ruta_completa, backup_ruta)
+                            os.remove(backup_ruta)
                         except:
                             pass
-                    
-                    # Escribir archivo de forma atomica
-                    with open(ruta_completa, 'wb') as f:
-                        f.write(contenido_a_guardar)
-                    
-                    # Ocultar archivo
+                    shutil.copy2(ruta_completa, backup_ruta)
+                except Exception as e:
+                    print(f"Error creando backup: {e}")
+            
+            # Escritura atomica usando archivo temporal
+            temp_fd, temp_path = tempfile.mkstemp(dir=self.ruta_segura, suffix='.tmp')
+            try:
+                # Escribir en archivo temporal
+                with os.fdopen(temp_fd, 'wb') as f:
+                    f.write(contenido_a_guardar)
+                    f.flush()
+                    os.fsync(f.fileno())  # Forzar escritura a disco
+                
+                # Reemplazar archivo original atomicamente
+                if os.path.exists(ruta_completa):
                     try:
-                        import ctypes
-                        FILE_ATTRIBUTE_HIDDEN = 0x02
-                        ctypes.windll.kernel32.SetFileAttributesW(ruta_completa, FILE_ATTRIBUTE_HIDDEN)
+                        os.remove(ruta_completa)
+                    except Exception as e:
+                        # Si no se puede eliminar, intentar renombrar
+                        try:
+                            os.rename(ruta_completa, ruta_completa + '.old')
+                        except:
+                            pass
+                
+                # Mover archivo temporal al destino final
+                shutil.move(temp_path, ruta_completa)
+                
+                # Ocultar archivo
+                try:
+                    import ctypes
+                    FILE_ATTRIBUTE_HIDDEN = 0x02
+                    ctypes.windll.kernel32.SetFileAttributesW(ruta_completa, FILE_ATTRIBUTE_HIDDEN)
+                except:
+                    pass
+                
+                # Eliminar archivo .old si existe
+                old_file = ruta_completa + '.old'
+                if os.path.exists(old_file):
+                    try:
+                        os.remove(old_file)
                     except:
                         pass
-                    
-                    return True
-                    
-                except (IOError, OSError) as e:
-                    if intento < max_intentos - 1:
-                        import time
-                        time.sleep(0.5)  # Esperar 500ms antes de reintentar
-                    else:
-                        raise e
-            
-            return True
+                
+                return True
+                
+            except Exception as e:
+                # Si falla, eliminar archivo temporal
+                try:
+                    if os.path.exists(temp_path):
+                        os.remove(temp_path)
+                except:
+                    pass
+                raise e
+                
         except Exception as e:
             print(f"Error al cifrar archivo: {e}")
             return False
