@@ -8,48 +8,26 @@ import subprocess
 import sys
 import time
 from seguridad import seguridad
+from logger import registrar_operacion, registrar_error, registrar_transaccion
+from config import TEMAS, TAMAÑOS_LETRA, API_URL, PASSWORD_CIFRADO, ARCHIVO_PAGOS
+from validadores import validar_nombre, validar_monto, ErrorValidacion
+from exportador import ExportadorExcel
+from backups import GestorBackups
+from historial import GestorHistorial
+from buscador import BuscadorAvanzado
+from historial import GestorHistorial
 
 class SistemaControlPagos:
-    # Temas
-    TEMAS = {
-        'claro': {
-            'bg': '#f0f0f0',
-            'fg': '#000000',
-            'frame_bg': '#ffffff',
-            'button_bg': '#e0e0e0',
-            'entrada_bg': '#ffffff',
-            'titulo_fg': '#1a1a1a',
-            'exito_fg': '#2e7d32',
-            'alerta_fg': '#f57f17',
-            'error_fg': '#c62828',
-            'tablas_even': '#f5f5f5',
-            'tablas_odd': '#ffffff'
-        },
-        'oscuro': {
-            'bg': '#1e1e1e',
-            'fg': '#e0e0e0',
-            'frame_bg': '#2d2d2d',
-            'button_bg': '#404040',
-            'entrada_bg': '#3a3a3a',
-            'titulo_fg': '#f0f0f0',
-            'exito_fg': '#66bb6a',
-            'alerta_fg': '#ffa726',
-            'error_fg': '#ef5350',
-            'tablas_even': '#252525',
-            'tablas_odd': '#2d2d2d'
-        }
-    }
-    
-    TAMAÑOS_LETRA = {
-        'pequeño': {'titulo': 10, 'normal': 8, 'grande': 9},
-        'normal': {'titulo': 14, 'normal': 10, 'grande': 12},
-        'grande': {'titulo': 18, 'normal': 12, 'grande': 16}
-    }
+    # Los temas y tamaños ahora vienen de config.py
 
     def __init__(self, root):
         self.root = root
         self.root.title("Sistema de Control de Pagos - Proyectos Comunitarios")
         self.root.state('zoomed')  # Pantalla completa en Windows
+
+        # Configuración visual proveniente de config.py
+        self.TEMAS = TEMAS
+        self.TAMAÑOS_LETRA = TAMAÑOS_LETRA
         
         # Tema y accesibilidad
         self.tema_actual = tk.StringVar(value='claro')
@@ -58,16 +36,23 @@ class SistemaControlPagos:
         # Datos
         self.cooperaciones = []
         self.coop_activa_id = None
+        self.cooperacion_actual = None  # Nombre descriptivo de la cooperacion activa
         self.personas = []
         self.monto_cooperacion = 100.0
         self.proyecto_actual = "Proyecto Comunitario 2026"
         self.mostrar_total = False
-        self.archivo_datos = "datos_pagos.json"
-        self.password_archivo = "SistemaComunidad2026"  # Contraseña para cifrado de archivos
+        self.archivo_datos = ARCHIVO_PAGOS
+        self.password_archivo = PASSWORD_CIFRADO
         self.password_hash = None
-        self.api_url = "http://127.0.0.1:5000/api"
+        self.api_url = API_URL
         self.fila_animada = None
         self.guardado_pendiente = None  # Timer para debounce de guardado
+        self.usuario_actual = None  # Usuario autenticado
+        self.gestor_auth = None  # Gestor de autenticación
+        self.gestor_historial = GestorHistorial()  # Gestor de historial
+        self.buscador = BuscadorAvanzado()  # Buscador avanzado
+        self.gestor_backups = GestorBackups()  # Gestor de backups
+        self.tree_persona_map = {}  # Mapea iids del tree a objetos persona
         
         # Cargar datos si existen (incluyendo tema y tamaño guardados)
         self.cargar_datos()
@@ -97,6 +82,16 @@ class SistemaControlPagos:
         
         # Configurar interfaz
         self.configurar_interfaz()
+        
+        # Configurar backup automático al cerrar
+        self.root.protocol("WM_DELETE_WINDOW", self.cerrar_aplicacion)
+    
+    def set_usuario(self, usuario, gestor_auth):
+        """Configurar usuario autenticado"""
+        self.usuario_actual = usuario
+        self.gestor_auth = gestor_auth
+        registrar_operacion('LOGIN', 'Usuario inició sesión', 
+            {'usuario': usuario['nombre'], 'rol': usuario['rol']}, usuario['nombre'])
     
     def obtener_colores(self):
         """Obtener paleta de colores del tema actual"""
@@ -274,6 +269,7 @@ class SistemaControlPagos:
         self.personas = coop.setdefault('personas', [])
         self.monto_cooperacion = coop.get('monto_cooperacion', self.monto_cooperacion)
         self.proyecto_actual = coop.get('proyecto', self.proyecto_actual)
+        self.cooperacion_actual = coop.get('nombre', 'Cooperacion')
 
     def refrescar_selector_cooperacion(self, seleccionar_activa=True):
         nombres = [c.get('nombre', 'Sin nombre') for c in self.cooperaciones]
@@ -606,11 +602,11 @@ class SistemaControlPagos:
         control_frame.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
         
         ttk.Button(control_frame, text="Agregar Persona", command=self.agregar_persona, width=16).pack(side=tk.LEFT, padx=5)
+        ttk.Button(control_frame, text="🔍 Búsqueda Avanzada", command=self.abrir_busqueda_avanzada, width=18).pack(side=tk.LEFT, padx=5)
         ttk.Button(control_frame, text="Editar Seleccionado", command=self.editar_persona, width=16).pack(side=tk.LEFT, padx=5)
         ttk.Button(control_frame, text="Eliminar Seleccionado", command=self.eliminar_persona, width=16).pack(side=tk.LEFT, padx=5)
         ttk.Button(control_frame, text="Registrar Pago", command=self.registrar_pago, width=16).pack(side=tk.LEFT, padx=5)
-        ttk.Button(control_frame, text="Ver Historial", command=self.ver_historial, width=14).pack(side=tk.LEFT, padx=5)
-        ttk.Button(control_frame, text="Guardar Datos", command=lambda: self.guardar_datos(inmediato=True), width=14).pack(side=tk.LEFT, padx=5)
+        ttk.Button(control_frame, text="📜 Ver Historial", command=self.ver_historial_completo, width=15).pack(side=tk.LEFT, padx=5)
         
         # Segunda fila de botones
         control_frame2 = ttk.Frame(main_frame)
@@ -618,6 +614,8 @@ class SistemaControlPagos:
         
         ttk.Button(control_frame2, text="Sincronizar con Censo", command=self.sincronizar_coop_con_censo, width=18).pack(side=tk.LEFT, padx=5)
         ttk.Button(control_frame2, text="Corregir Folios Duplicados", command=self.corregir_folios, width=20).pack(side=tk.LEFT, padx=5)
+        ttk.Button(control_frame2, text="Exportar a Excel", command=self.exportar_excel, width=15).pack(side=tk.LEFT, padx=5)
+        ttk.Button(control_frame2, text="Crear Backup", command=self.crear_backup, width=15).pack(side=tk.LEFT, padx=5)
         
         # Botón para mostrar/ocultar total
         self.btn_toggle_total = ttk.Button(control_frame2, text="Mostrar Total Recaudado", command=self.toggle_total, width=20)
@@ -856,6 +854,11 @@ class SistemaControlPagos:
             }
             
             self.personas.append(persona)
+            
+            # Registrar en historial
+            usuario = self.usuario_actual['nombre'] if self.usuario_actual else 'Sistema'
+            self.gestor_historial.registrar_creacion('PERSONA', folio, persona, usuario)
+            
             self.actualizar_tabla()
             self.actualizar_totales()
             self.guardar_datos(mostrar_alerta=False)
@@ -876,8 +879,15 @@ class SistemaControlPagos:
             return
         
         item = seleccion[0]
-        index = self.tree.index(item)
-        persona = self.personas[index]
+        persona = self.tree_persona_map.get(item)
+        if not persona:
+            messagebox.showerror("Error", "No se pudo localizar la persona seleccionada")
+            return
+        try:
+            index = self.personas.index(persona)
+        except ValueError:
+            messagebox.showerror("Error", "La persona seleccionada ya no existe en la lista")
+            return
         
         # Ventana para editar
         dialog = tk.Toplevel(self.root)
@@ -912,8 +922,20 @@ class SistemaControlPagos:
                     messagebox.showerror("Error", "Ya existe una persona con ese nombre")
                     return
             
+            # Guardar valores anteriores para historial
+            cambios = {}
+            if persona['nombre'] != nombre:
+                cambios['nombre'] = {'anterior': persona['nombre'], 'nuevo': nombre}
+            if persona.get('notas', '') != notas_entry.get().strip():
+                cambios['notas'] = {'anterior': persona.get('notas', ''), 'nuevo': notas_entry.get().strip()}
+            
             self.personas[index]['nombre'] = nombre
             self.personas[index]['notas'] = notas_entry.get().strip()
+            
+            # Registrar en historial si hubo cambios
+            if cambios:
+                usuario = self.usuario_actual['nombre'] if self.usuario_actual else 'Sistema'
+                self.gestor_historial.registrar_cambio('EDITAR', 'PERSONA', persona.get('folio', ''), cambios, usuario)
             
             self.actualizar_tabla()
             self.actualizar_totales()
@@ -929,10 +951,22 @@ class SistemaControlPagos:
             return
         
         item = seleccion[0]
-        index = self.tree.index(item)
-        persona = self.personas[index]
+        persona = self.tree_persona_map.get(item)
+        if not persona:
+            messagebox.showerror("Error", "No se pudo localizar la persona seleccionada")
+            return
+        try:
+            index = self.personas.index(persona)
+        except ValueError:
+            messagebox.showerror("Error", "La persona seleccionada ya no existe en la lista")
+            return
         
         if messagebox.askyesno("Confirmar", f"¿Esta seguro de eliminar a {persona['nombre']}?"):
+            # Registrar en historial antes de eliminar
+            usuario = self.usuario_actual['nombre'] if self.usuario_actual else 'Sistema'
+            self.gestor_historial.registrar_cambio('ELIMINAR', 'PERSONA', persona.get('folio', ''), 
+                {'persona_eliminada': persona}, usuario)
+            
             self.personas.pop(index)
             self.actualizar_tabla()
             self.actualizar_totales()
@@ -946,8 +980,10 @@ class SistemaControlPagos:
             return
         
         item = seleccion[0]
-        index = self.tree.index(item)
-        persona = self.personas[index]
+        persona = self.tree_persona_map.get(item)
+        if not persona:
+            messagebox.showerror("Error", "No se pudo localizar la persona seleccionada")
+            return
         
         # Calcular cuánto falta
         total_pagado = sum(pago['monto'] for pago in persona.get('pagos', []))
@@ -982,8 +1018,12 @@ class SistemaControlPagos:
         def guardar_pago(event=None):
             try:
                 monto_pago = monto_var.get()
-                if monto_pago <= 0:
-                    messagebox.showerror("Error", "El monto debe ser mayor a 0")
+                
+                # Validar el monto (lanza ErrorValidacion si es invalido)
+                try:
+                    monto_pago = validar_monto(monto_pago)
+                except ErrorValidacion as e:
+                    messagebox.showerror("Error", str(e))
                     return
                 
                 if monto_pago > pendiente:
@@ -1003,20 +1043,37 @@ class SistemaControlPagos:
                 
                 persona['pagos'].append(pago)
                 
-                self.actualizar_tabla()
+                # Registrar en log
+                registrar_operacion('PAGO_REGISTRADO', 'Pago registrado correctamente', {
+                    'nombre': persona['nombre'],
+                    'folio': persona.get('folio', 'SIN-FOLIO'),
+                    'monto': monto_pago,
+                    'cooperacion': self.cooperacion_actual
+                })
+                
+                # Refrescar datos y UI
                 self.actualizar_totales()
                 self.guardar_datos(mostrar_alerta=False)
+                self.actualizar_tabla()
                 dialog.destroy()
-                
-                # Visual feedback: animar la fila
+
+                # Visual feedback: animar la fila (puede cambiar el item tras refresco)
                 nuevo_total = sum(p['monto'] for p in persona['pagos'])
-                if nuevo_total >= monto_esperado:
-                    self.animar_fila_pagada(item, "completado")
-                else:
-                    self.animar_fila_pagada(item, "parcial")
+                try:
+                    new_item = self._persona_iid(persona)
+                    if self.tree.exists(new_item):
+                        if nuevo_total >= monto_esperado:
+                            self.animar_fila_pagada(new_item, "completado")
+                        else:
+                            self.animar_fila_pagada(new_item, "parcial")
+                except Exception as anim_err:
+                    # No interrumpir si solo falla la animación
+                    registrar_error('control_pagos', 'animar_fila_pagada', str(anim_err))
                 
-            except Exception:
-                pass  # El pago se registró correctamente
+            except Exception as e:
+                # Mostrar el error inesperado para que no falle silencioso
+                registrar_error('control_pagos', 'registrar_pago', str(e))
+                messagebox.showerror("Error", f"No se pudo registrar el pago: {e}")
         
         botones = ttk.Frame(dialog)
         botones.pack(pady=15)
@@ -1041,7 +1098,9 @@ class SistemaControlPagos:
                 self.root.after(150, lambda: pulso(idx + 1))
             else:
                 # Restaurar color normal
-                persona = self.personas[self.tree.index(item)]
+                persona = self.tree_persona_map.get(item)
+                if not persona:
+                    return
                 total_pagado = sum(p['monto'] for p in persona.get('pagos', []))
                 monto_esperado = persona.get('monto_esperado', 100)
                 if total_pagado >= monto_esperado:
@@ -1061,8 +1120,10 @@ class SistemaControlPagos:
             return
         
         item = seleccion[0]
-        index = self.tree.index(item)
-        persona = self.personas[index]
+        persona = self.tree_persona_map.get(item)
+        if not persona:
+            messagebox.showerror("Error", "No se pudo localizar la persona seleccionada")
+            return
         
         # Ventana de historial
         dialog = tk.Toplevel(self.root)
@@ -1152,6 +1213,7 @@ class SistemaControlPagos:
         # Limpiar tabla
         for item in self.tree.get_children():
             self.tree.delete(item)
+        self.tree_persona_map = {}
         
         # Filtrar personas si hay búsqueda activa
         personas_mostrar = self.personas
@@ -1193,7 +1255,8 @@ class SistemaControlPagos:
                 ultimo = persona['pagos'][-1]
                 ultimo_pago = f"{ultimo['fecha']} {ultimo['hora']}"
             
-            self.tree.insert('', tk.END, 
+            iid = self._persona_iid(persona)
+            self.tree.insert('', tk.END, iid=iid,
                            values=(persona.get('folio', 'SIN-FOLIO'),
                                   persona['nombre'],
                                   f"${monto_esperado:.2f}",
@@ -1203,6 +1266,7 @@ class SistemaControlPagos:
                                   ultimo_pago,
                                   persona.get('notas', '')),
                            tags=(tag,))
+            self.tree_persona_map[iid] = persona
         
         # Actualizar contador de personas
         total_mostradas = len(personas_mostrar)
@@ -1231,6 +1295,11 @@ class SistemaControlPagos:
         self.total_pagado_label.config(text=f"Total Recaudado: ${total_pagado:.2f}")
         self.total_pendiente_label.config(text=f"Total Pendiente: ${total_pendiente:.2f}")
         self.personas_pagadas_label.config(text=f"Personas que pagaron completo: {personas_pagadas} de {len(self.personas)}")
+
+    def _persona_iid(self, persona):
+        """Devuelve un iid estable para el Treeview basado en el objeto persona"""
+        folio = persona.get('folio', 'SIN-FOLIO')
+        return f"{folio}|{id(persona)}"
     
     def guardar_datos(self, mostrar_alerta=True, inmediato=False):
         """Guardar datos con debounce para evitar conflictos"""
@@ -1295,16 +1364,147 @@ class SistemaControlPagos:
                 self.coop_activa_id = nueva['id']
         except Exception as e:
             print(f"Error al cargar datos: {str(e)}")
+    
+    def exportar_excel(self):
+        """Exportar cooperación actual a Excel"""
+        if not self.personas:
+            messagebox.showwarning("Advertencia", "No hay datos para exportar")
+            return
+        
+        try:
+            # Obtener nombre de cooperación actual
+            coop_actual = next((c for c in self.cooperaciones if c['id'] == self.coop_activa_id), None)
+            nombre_coop = coop_actual['nombre'] if coop_actual else "Cooperacion"
+            
+            # Solicitar ubicación de guardado
+            archivo = filedialog.asksaveasfilename(
+                defaultextension=".xlsx",
+                filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")],
+                initialfile=f"{nombre_coop}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+            )
+            
+            if not archivo:
+                return
+            
+            # Exportar usando el módulo exportador
+            exportador = ExportadorExcel()
+            ruta_archivo = exportador.exportar_personas_cooperacion(
+                self.personas, nombre_coop, os.path.basename(archivo)
+            )
+            
+            if ruta_archivo:
+                registrar_operacion('EXPORTAR_EXCEL', 'Datos exportados a Excel', 
+                    {'cooperacion': nombre_coop, 'archivo': ruta_archivo, 'total_personas': len(self.personas)})
+                messagebox.showinfo("Éxito", f"Datos exportados correctamente a:\n{ruta_archivo}")
+            else:
+                messagebox.showerror("Error", "No se pudo exportar el archivo")
+        except Exception as e:
+            registrar_error('EXPORTAR_EXCEL', str(e))
+            messagebox.showerror("Error", f"Error al exportar: {str(e)}")
+    
+    def crear_backup(self):
+        """Crear un backup completo del sistema"""
+        try:
+            resultado = self.gestor_backups.crear_backup_completo()
+            if resultado['exito']:
+                registrar_operacion('CREAR_BACKUP', 'Backup creado manualmente', {'archivo': resultado['nombre_carpeta']})
+                messagebox.showinfo("Éxito", f"Backup creado correctamente:\n{resultado['nombre_carpeta']}")
+            else:
+                messagebox.showerror("Error", f"Error al crear backup: {resultado.get('error', 'Desconocido')}")
+        except Exception as e:
+            registrar_error('CREAR_BACKUP', str(e))
+            messagebox.showerror("Error", f"Error al crear backup: {str(e)}")
+    
+    def set_usuario(self, usuario, gestor_auth):
+        """Configurar usuario autenticado"""
+        self.usuario_actual = usuario
+        self.gestor_auth = gestor_auth
+        registrar_operacion('LOGIN', 'Usuario inició sesión', 
+            {'usuario': usuario['nombre'], 'rol': usuario['rol']}, usuario['nombre'])
+    
+    def abrir_busqueda_avanzada(self):
+        """Abrir ventana de búsqueda avanzada"""
+        if not self.personas:
+            messagebox.showinfo("Información", "No hay personas para buscar")
+            return
+        
+        from ventana_busqueda import VentanaBusquedaAvanzada
+        VentanaBusquedaAvanzada(self.root, self.personas, self.seleccionar_persona_busqueda)
+    
+    def seleccionar_persona_busqueda(self, persona):
+        """Callback cuando se selecciona una persona en la búsqueda"""
+        # Seleccionar el iid asociado en el tree
+        iid = self._persona_iid(persona)
+        if self.tree.exists(iid):
+            self.tree.selection_set(iid)
+            self.tree.see(iid)
+    
+    def ver_historial_completo(self):
+        """Abrir ventana de historial completo"""
+        from ventana_historial import VentanaHistorial
+        VentanaHistorial(self.root)
+    
+    def cerrar_aplicacion(self):
+        """Cerrar aplicación con backup automático"""
+        try:
+            # Preguntar si desea crear backup
+            respuesta = messagebox.askyesno("Backup Automático", 
+                "¿Desea crear un backup antes de salir?")
+            
+            if respuesta:
+                registrar_operacion('BACKUP_AUTO', 'Creando backup automático al cerrar', {})
+                resultado = self.gestor_backups.crear_backup_completo()
+                if resultado['exito']:
+                    # Limpiar backups antiguos (mantener solo últimos 10)
+                    try:
+                        self.gestor_backups.limpiar_backups_antiguos(10)
+                    except:
+                        pass  # No es crítico si falla
+                    messagebox.showinfo("Backup Creado", 
+                        f"Backup creado exitosamente:\n{resultado['nombre_carpeta']}")
+            
+            # Cerrar sesión si hay usuario activo
+            if self.usuario_actual and self.gestor_auth:
+                registrar_operacion('LOGOUT', 'Usuario cerró sesión', 
+                    {'usuario': self.usuario_actual['nombre']}, self.usuario_actual['nombre'])
+            
+            # Cerrar aplicación
+            self.root.quit()
+            self.root.destroy()
+        except Exception as e:
+            registrar_error('CERRAR_APP', str(e))
+            self.root.quit()
+            self.root.destroy()
 
 def main():
+    """Punto de entrada principal con autenticación"""
+    # Crear ventana principal (oculta inicialmente)
     root = tk.Tk()
-    app = SistemaControlPagos(root)
+    root.withdraw()
     
-    # Cargar nombre de proyecto guardado si existe
-    if hasattr(app, '_proyecto_guardado'):
-        app.proyecto_var.set(app._proyecto_guardado)
+    # Crear ventana de login
+    from login_window import VentanaLogin
     
-    root.mainloop()
+    def on_login_exitoso(usuario, gestor_auth):
+        """Callback cuando el login es exitoso"""
+        # Mostrar ventana principal
+        root.deiconify()
+        
+        # Crear aplicación
+        app = SistemaControlPagos(root)
+        app.set_usuario(usuario, gestor_auth)
+        
+        # Cargar nombre de proyecto guardado si existe
+        if hasattr(app, '_proyecto_guardado'):
+            app.proyecto_var.set(app._proyecto_guardado)
+        
+        # Actualizar título con usuario
+        root.title(f"Sistema de Control de Pagos - {usuario['nombre']} ({usuario['rol']})")
+    
+    # Crear ventana de login
+    login_root = tk.Tk()
+    VentanaLogin(login_root, on_login_exitoso)
+    login_root.mainloop()
 
 if __name__ == "__main__":
     main()
