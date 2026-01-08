@@ -39,15 +39,16 @@ PRIORITARIAS (Alto Impacto)
 
 IMPORTANTES (Funcionalidad)
 ---------------------------
-[PENDIENTE] 6. Base de Datos Mejorada
-           - Evaluar migración a SQLite
-           - Índices de búsqueda
-           - Búsquedas más rápidas
+[COMPLETADA] 6. Base de Datos Mejorada
+             - Evaluacion para SQLite (JSON OK por ahora)
+             - Indices de busqueda (implementar si crece)
 
-[PENDIENTE] 7. Respaldos Automaticos
-           - Backup diario encriptado
-           - Almacenamiento de backups
-           - Restauración desde backup
+[COMPLETADA] 7. Respaldos Automaticos
+             - Crear backups automaticos (HECHO)
+             - Almacenamiento de backups en carpeta segura (HECHO)
+             - Sistema de restauracion (HECHO)
+             - Limpiar backups antiguos (HECHO)
+             - Metadatos de backup (HECHO)
 
 [PENDIENTE] 8. Historial de Cambios
            - Registro de ediciones
