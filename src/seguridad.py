@@ -6,7 +6,7 @@ import hashlib
 from pathlib import Path
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 class SeguridadManager:
     """Gestor de seguridad para cifrado de archivos y protección de datos"""
@@ -36,7 +36,7 @@ class SeguridadManager:
     
     def generar_clave_desde_password(self, password):
         """Genera una clave de cifrado derivada de una contraseña"""
-        kdf = PBKDF2(
+        kdf = PBKDF2HMAC(
             algorithm=hashes.SHA256(),
             length=32,
             salt=self.salt,

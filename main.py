@@ -7,6 +7,10 @@ import subprocess
 import sys
 import time
 import os
+
+# Agregar la carpeta src al path para poder importar los módulos
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src'))
+
 import requests
 
 def verificar_api():
@@ -57,11 +61,16 @@ def iniciar_censo():
         print("Iniciando Sistema de Censo de Habitantes...")
         print("="*60 + "\n")
         
+        # Cambiar al directorio src para que los imports funcionen
+        os.chdir(os.path.join(script_dir, "src"))
+        
         # Ejecutar censo (bloquea hasta que se cierre)
         subprocess.run([sys.executable, censo_path])
         
     except Exception as e:
         print(f"Error al iniciar censo: {e}")
+        import traceback
+        traceback.print_exc()
         input("Presiona Enter para salir...")
 
 def main():
