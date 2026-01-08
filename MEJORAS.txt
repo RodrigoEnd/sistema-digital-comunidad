@@ -50,16 +50,22 @@ IMPORTANTES (Funcionalidad)
              - Limpiar backups antiguos (HECHO)
              - Metadatos de backup (HECHO)
 
-[PENDIENTE] 8. Historial de Cambios
-           - Registro de ediciones
-           - Timestamp en operaciones
-           - Usuario que realizó cambio
+[COMPLETADA] 8. Historial de Cambios
+             - Registrar ediciones con timestamp (HECHO)
+             - Guardar usuario que realizo cambio (HECHO)
+             - Historial por entidad (HECHO)
+             - Historial por usuario (HECHO)
+             - Historial por fecha (HECHO)
+             - Estadisticas de cambios (HECHO)
+             - Exportar auditoria (HECHO)
 
-[PENDIENTE] 9. Busqueda Avanzada
-           - Filtros por fecha
-           - Filtros por estado de pago
-           - Filtros por monto
-           - Filtros por folio
+[COMPLETADA] 9. Busqueda Avanzada
+             - Filtros por nombre (HECHO)
+             - Filtros por estado de pago (HECHO)
+             - Filtros por monto (HECHO)
+             - Filtros por fecha (HECHO)
+             - Estadisticas de pagos (HECHO)
+             - Estadisticas de personas (HECHO)
 
 [PENDIENTE] 10. Notificaciones
             - Alertas de registros atrasados
