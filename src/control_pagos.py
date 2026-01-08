@@ -7,6 +7,7 @@ import requests
 import subprocess
 import sys
 import time
+import threading
 from seguridad import seguridad
 from logger import registrar_operacion, registrar_error, registrar_transaccion
 from config import TEMAS, TAMAÑOS_LETRA, API_URL, PASSWORD_CIFRADO, ARCHIVO_PAGOS, MODO_OFFLINE
@@ -54,6 +55,7 @@ class SistemaControlPagos:
         self.gestor_backups = GestorBackups()  # Gestor de backups
         self.tree_persona_map = {}  # Mapea iids del tree a objetos persona
         self.permisos_rol = self.gestor_auth.ROLES if self.gestor_auth else {}
+        self.api_caida_notificada = False
         
         # Cargar datos si existen (incluyendo tema y tamaño guardados)
         self.cargar_datos()
@@ -73,6 +75,7 @@ class SistemaControlPagos:
         if not self.asegurar_api_activa():
             messagebox.showerror("Error", "No se pudo iniciar ni conectar con la API local")
             return
+        self.iniciar_watchdog_api()
         
         # Verificar/establecer contraseña primera vez
         if not self.verificar_password_inicial():
@@ -800,6 +803,28 @@ class SistemaControlPagos:
             return response.status_code == 200
         except:
             return False
+
+    def iniciar_watchdog_api(self):
+        """Hilo de monitoreo ligero para reintentar API local"""
+        def monitor():
+            while True:
+                time.sleep(10)
+                if self.verificar_api():
+                    self.api_caida_notificada = False
+                    continue
+                # intentar reiniciar
+                if self.asegurar_api_activa():
+                    self.api_caida_notificada = False
+                    continue
+                if not self.api_caida_notificada:
+                    registrar_error('API', 'watchdog', 'API local no responde')
+                    try:
+                        messagebox.showwarning("API", "API local no responde; reintentando en segundo plano")
+                    except:
+                        pass
+                    self.api_caida_notificada = True
+        hilo = threading.Thread(target=monitor, daemon=True)
+        hilo.start()
 
     def generar_folio_local(self):
         """Genera un folio local único cuando no hay API"""

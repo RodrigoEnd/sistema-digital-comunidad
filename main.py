@@ -40,7 +40,7 @@ def iniciar_api():
         
         print("Iniciando servidor API...")
         # Esperar a que la API esté lista
-        for i in range(15):
+        for i in range(20):  # subimos a ~10s de espera
             time.sleep(0.5)
             if verificar_api():
                 print("API iniciada correctamente")

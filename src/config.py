@@ -11,7 +11,7 @@ API_PORT = 5000
 API_HOST = "127.0.0.1"
 
 # Modo offline: si es True no se requiere la API para operar
-MODO_OFFLINE = True
+MODO_OFFLINE = False
 
 # Seguridad
 PASSWORD_CIFRADO = "SistemaComunidad2026"
