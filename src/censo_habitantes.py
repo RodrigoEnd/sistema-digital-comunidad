@@ -6,18 +6,30 @@ import sys
 import time
 import os
 from datetime import datetime
+from config import API_URL, TEMAS
+from tema_moderno import TEMA_CLARO, TEMA_OSCURO, FUENTES
+from logger import registrar_operacion, registrar_error
+from validadores import validar_nombre
 
 class SistemaCensoHabitantes:
     def __init__(self, root):
         self.root = root
-        self.root.title("Sistema de Censo de Habitantes del Pueblo")
+        self.root.title("📋 Sistema de Censo de Habitantes - Comunidad San Pablo")
         self.root.state('zoomed')
         
-        self.api_url = "http://127.0.0.1:5000/api"
+        # Configurar icono y estilos
+        self.root.geometry("1400x800")
+        self.style = ttk.Style()
+        self.tema_actual = 'claro'
+        
+        self.api_url = API_URL
         self.habitantes = []
         self.nombre_visible = tk.BooleanVar(value=True)
         self.folio_visible = tk.BooleanVar(value=True)
         
+        # Estilos iniciales
+        self.configurar_estilos()
+
         # Verificar/iniciar API local
         if not self.asegurar_api_activa():
             messagebox.showerror("Error", "No se pudo iniciar ni conectar con la API local")
@@ -25,6 +37,21 @@ class SistemaCensoHabitantes:
         
         self.configurar_interfaz()
         self.cargar_habitantes()
+
+    def obtener_colores(self):
+        return TEMAS[self.tema_actual]
+
+    def configurar_estilos(self):
+        colores = self.obtener_colores()
+        self.style.theme_use('clam')
+        self.style.configure('TFrame', background=colores['bg'])
+        self.style.configure('TLabel', background=colores['bg'], foreground=colores['fg'])
+        self.style.configure('TButton', background=colores['button_bg'], foreground=colores['fg'], padding=6, borderwidth=1)
+        self.style.map('TButton', background=[('active', colores.get('button_hover', colores['button_bg']))])
+        self.style.configure('TEntry', fieldbackground=colores['entrada_bg'], borderwidth=1)
+        self.style.configure('Treeview', background=colores['tablas_even'], fieldbackground=colores['tablas_even'], foreground=colores['fg'], borderwidth=0)
+        self.style.map('Treeview', background=[('selected', colores['tablas_odd'])], foreground=[('selected', colores['fg'])])
+        self.style.configure('Treeview.Heading', background=colores['frame_bg'], foreground=colores['fg'], padding=6)
 
     def asegurar_api_activa(self):
         """Comprueba la API y la levanta si no está activa"""
@@ -67,7 +94,7 @@ class SistemaCensoHabitantes:
         header_frame.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
         
         ttk.Label(header_frame, text="Sistema de Registro de Habitantes del Pueblo", 
-                 font=('Arial', 14, 'bold')).grid(row=0, column=0, columnspan=3, pady=5)
+             font=FUENTES['titulo']).grid(row=0, column=0, columnspan=3, pady=5)
         
         fecha_actual = datetime.now().strftime("%d/%m/%Y")
         ttk.Label(header_frame, text=f"Fecha: {fecha_actual}").grid(row=1, column=0, sticky=tk.W, padx=5)
@@ -225,8 +252,11 @@ class SistemaCensoHabitantes:
         
         def guardar(event=None):
             nombre = nombre_entry.get().strip()
-            if not nombre:
-                messagebox.showerror("Error", "El nombre es obligatorio")
+            
+            # Validar nombre
+            validacion = validar_nombre(nombre)
+            if not validacion['valido']:
+                messagebox.showerror("Error", validacion['mensaje'])
                 return
             
             try:
@@ -236,12 +266,15 @@ class SistemaCensoHabitantes:
                 data = response.json()
                 
                 if data['success']:
+                    registrar_operacion('CENSO_AGREGAR', 'Habitante agregado desde censo', 
+                        {'nombre': nombre, 'folio': data['habitante']['folio']})
                     messagebox.showinfo("Exito", 
                         f"Habitante agregado correctamente\n"
                         f"Folio asignado: {data['habitante']['folio']}")
                     dialog.destroy()
                     self.cargar_habitantes()
                 else:
+                    registrar_error('CENSO_AGREGAR', data['mensaje'])
                     messagebox.showerror("Error", data['mensaje'])
             except Exception as e:
                 messagebox.showerror("Error", f"Error al agregar: {str(e)}")

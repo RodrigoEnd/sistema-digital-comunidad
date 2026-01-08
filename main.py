@@ -14,7 +14,7 @@ from tkinter import messagebox
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src'))
 
 import requests
-from config import MODO_OFFLINE
+from src.config import MODO_OFFLINE
 
 def verificar_api():
     """Verificar si la API está activa"""
@@ -119,7 +119,7 @@ def main():
             os.chdir(os.path.join(script_dir, "src"))
             
             # Importar e iniciar control de pagos con login
-            from control_pagos import main as control_main
+            from src.control_pagos import main as control_main
             control_main()
             
         except Exception as e:

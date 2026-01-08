@@ -29,30 +29,32 @@ VENTANA_MODO = 'zoomed'  # 'zoomed' para pantalla completa en Windows
 # Temas
 TEMAS = {
     'claro': {
-        'bg': '#f0f0f0',
-        'fg': '#000000',
-        'frame_bg': '#ffffff',
-        'button_bg': '#e0e0e0',
+        'bg': '#ffffff',
+        'fg': '#1a1a1a',
+        'frame_bg': '#f8f9fa',
+        'button_bg': '#e9ecef',
         'entrada_bg': '#ffffff',
-        'titulo_fg': '#1a1a1a',
-        'exito_fg': '#2e7d32',
-        'alerta_fg': '#f57f17',
-        'error_fg': '#c62828',
-        'tablas_even': '#f5f5f5',
-        'tablas_odd': '#ffffff'
+        'titulo_fg': '#0066cc',
+        'exito_fg': '#28a745',
+        'alerta_fg': '#ffc107',
+        'error_fg': '#dc3545',
+        'tablas_even': '#ffffff',
+        'tablas_odd': '#f8f9fa',
+        'border': '#dee2e6',
     },
     'oscuro': {
-        'bg': '#1e1e1e',
-        'fg': '#e0e0e0',
+        'bg': '#1a1a1a',
+        'fg': '#e9ecef',
         'frame_bg': '#2d2d2d',
-        'button_bg': '#404040',
-        'entrada_bg': '#3a3a3a',
-        'titulo_fg': '#f0f0f0',
-        'exito_fg': '#66bb6a',
-        'alerta_fg': '#ffa726',
-        'error_fg': '#ef5350',
-        'tablas_even': '#252525',
-        'tablas_odd': '#2d2d2d'
+        'button_bg': '#3d3d3d',
+        'entrada_bg': '#2d2d2d',
+        'titulo_fg': '#4da6ff',
+        'exito_fg': '#51cf66',
+        'alerta_fg': '#ffd93d',
+        'error_fg': '#ff6b6b',
+        'tablas_even': '#1a1a1a',
+        'tablas_odd': '#2d2d2d',
+        'border': '#495057',
     }
 }
 

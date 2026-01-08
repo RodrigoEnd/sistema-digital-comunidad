@@ -16,7 +16,8 @@ from exportador import ExportadorExcel
 from backups import GestorBackups
 from historial import GestorHistorial
 from buscador import BuscadorAvanzado
-from historial import GestorHistorial
+from tema_moderno import TEMA_CLARO, TEMA_OSCURO, FUENTES, ESPACIADO, ICONOS
+from ui_moderna import BarraSuperior, PanelModerno, BotonModerno
 
 class SistemaControlPagos:
     # Los temas y tamaños ahora vienen de config.py
@@ -26,16 +27,17 @@ class SistemaControlPagos:
         self.root.title("Sistema de Control de Pagos - Proyectos Comunitarios")
         self.root.state('zoomed')  # Pantalla completa en Windows
 
-        # Configuración visual proveniente de config.py
+        # Configuración visual proveniente de config.py y tema moderno
         self.TEMAS = TEMAS
         self.TAMAÑOS_LETRA = TAMAÑOS_LETRA
-        
+        self.tema_claro = TEMA_CLARO
+        self.tema_oscuro = TEMA_OSCURO
+        self.style = ttk.Style()
         # Tema y accesibilidad
         self.tema_actual = tk.StringVar(value='claro')
         self.tamaño_actual = tk.StringVar(value='normal')
         
         # Datos
-        self.cooperaciones = []
         self.coop_activa_id = None
         self.cooperacion_actual = None  # Nombre descriptivo de la cooperacion activa
         self.personas = []
@@ -56,6 +58,7 @@ class SistemaControlPagos:
         self.tree_persona_map = {}  # Mapea iids del tree a objetos persona
         self.permisos_rol = self.gestor_auth.ROLES if self.gestor_auth else {}
         self.api_caida_notificada = False
+        self.barra_superior = None  # Referencia a barra superior para actualizaciones
         
         # Cargar datos si existen (incluyendo tema y tamaño guardados)
         self.cargar_datos()
@@ -70,6 +73,9 @@ class SistemaControlPagos:
         # Ahora sí vincular los eventos de cambio
         self.tema_actual.trace('w', self.aplicar_tema)
         self.tamaño_actual.trace('w', self.aplicar_tamaño)
+
+        # Configurar estilos iniciales
+        self.configurar_estilos()
         
         # Verificar/iniciar API local
         if not self.asegurar_api_activa():
@@ -86,6 +92,7 @@ class SistemaControlPagos:
         
         # Configurar interfaz
         self.configurar_interfaz()
+        self.aplicar_tema()  # Aplicar tema inicial
         
         # Configurar backup automático al cerrar
         self.root.protocol("WM_DELETE_WINDOW", self.cerrar_aplicacion)
@@ -114,6 +121,28 @@ class SistemaControlPagos:
     def obtener_colores(self):
         """Obtener paleta de colores del tema actual"""
         return self.TEMAS[self.tema_actual.get()]
+
+    def configurar_estilos(self):
+        """Configura estilos ttk segun tema actual"""
+        colores = self.obtener_colores()
+        tema_visual = TEMA_CLARO if self.tema_actual.get() == 'claro' else TEMA_OSCURO
+        base_bg = colores.get('bg', tema_visual['bg_principal'])
+        base_fg = colores.get('fg', tema_visual['fg_principal'])
+
+        self.style.theme_use('clam')
+        self.style.configure('TFrame', background=base_bg)
+        self.style.configure('TLabelframe', background=colores['frame_bg'], foreground=base_fg, font=FUENTES['subtitulo'])
+        self.style.configure('TLabelframe.Label', background=colores['frame_bg'], foreground=base_fg, font=FUENTES['subtitulo'])
+        self.style.configure('TLabel', background=base_bg, foreground=base_fg, font=FUENTES['normal'])
+        self.style.configure('TButton', background=tema_visual['accent_primary'], foreground='#ffffff', padding=8, borderwidth=0, font=FUENTES['botones'])
+        self.style.map('TButton', background=[('active', tema_visual['accent_secondary'])], foreground=[('active', '#ffffff')])
+        self.style.configure('TCheckbutton', background=base_bg, foreground=base_fg, font=FUENTES['normal'])
+        self.style.configure('TEntry', fieldbackground=colores['entrada_bg'], borderwidth=1)
+        self.style.configure('Treeview', background=tema_visual['table_row_even'], fieldbackground=tema_visual['table_row_even'],
+                             foreground=base_fg, borderwidth=0, rowheight=26, font=FUENTES['normal'])
+        self.style.map('Treeview', background=[('selected', tema_visual['table_selected'])], foreground=[('selected', tema_visual['fg_principal'])])
+        self.style.configure('Treeview.Heading', background=tema_visual['table_header'], foreground=base_fg,
+                             padding=8, font=FUENTES['subtitulo'], borderwidth=1, relief='flat')
     
     def obtener_tamaños(self):
         """Obtener tamaños de letra"""
@@ -123,18 +152,31 @@ class SistemaControlPagos:
         """Aplicar cambios de tema a toda la interfaz inmediatamente"""
         if not hasattr(self, 'tree'):
             return  # Aún no se ha creado la interfaz
-        
+
         colores = self.obtener_colores()
+        tema_visual = TEMA_CLARO if self.tema_actual.get() == 'claro' else TEMA_OSCURO
+        self.configurar_estilos()
+        try:
+            self.root.configure(bg=colores['bg'])
+        except:
+            pass
         
-        # Actualizar colores de la tabla
-        self.tree.tag_configure('pagado', background=colores['tablas_even'] if self.tema_actual.get() == 'oscuro' else '#c8e6c9', 
-                               foreground=colores['titulo_fg'])
-        self.tree.tag_configure('pendiente', background=colores['tablas_odd'] if self.tema_actual.get() == 'oscuro' else '#ffccbc', 
-                               foreground=colores['error_fg'])
-        self.tree.tag_configure('parcial', background='#fff9c4' if self.tema_actual.get() == 'claro' else '#4a4a2a', 
-                               foreground=colores['alerta_fg'])
+        # Zebra + estados con alto contraste
+        self.tree.tag_configure('fila_par', background=tema_visual['table_row_even'], foreground=tema_visual['fg_principal'])
+        self.tree.tag_configure('fila_impar', background=tema_visual['table_row_odd'], foreground=tema_visual['fg_principal'])
+        self.tree.tag_configure('pagado', foreground=colores['exito_fg'])
+        self.tree.tag_configure('pendiente', foreground=colores['error_fg'])
+        self.tree.tag_configure('parcial', foreground=colores['alerta_fg'])
         self.tree.tag_configure('pago_ok', background=colores['exito_fg'], foreground='#fff')
-        self.tree.tag_configure('pago_parcial', background=colores['alerta_fg'], foreground='#fff')
+        self.tree.tag_configure('pago_parcial', background=colores['alerta_fg'], foreground='#1a1a1a')
+
+        if hasattr(self, 'menu_persona'):
+            self.menu_persona.configure(
+                bg=tema_visual['bg_secundario'],
+                fg=tema_visual['fg_principal'],
+                activebackground=tema_visual['accent_secondary'],
+                activeforeground=tema_visual['fg_principal']
+            )
         
         # Actualizar etiquetas de total
         if hasattr(self, 'total_pagado_label'):
@@ -683,14 +725,14 @@ class SistemaControlPagos:
         self.tree.heading('ultimo_pago', text='Ultimo Pago')
         self.tree.heading('notas', text='Notas')
         
-        self.tree.column('folio', width=90, anchor=tk.CENTER, stretch=False)
-        self.tree.column('nombre', width=220, anchor=tk.W)
+        self.tree.column('folio', width=95, anchor=tk.CENTER, stretch=False)
+        self.tree.column('nombre', width=260, anchor=tk.W)
         self.tree.column('monto_esperado', width=120, anchor=tk.CENTER)
-        self.tree.column('pagado', width=100, anchor=tk.CENTER)
-        self.tree.column('pendiente', width=100, anchor=tk.CENTER)
-        self.tree.column('estado', width=100, anchor=tk.CENTER)
-        self.tree.column('ultimo_pago', width=150, anchor=tk.CENTER)
-        self.tree.column('notas', width=200, anchor=tk.W)
+        self.tree.column('pagado', width=110, anchor=tk.CENTER)
+        self.tree.column('pendiente', width=110, anchor=tk.CENTER)
+        self.tree.column('estado', width=110, anchor=tk.CENTER)
+        self.tree.column('ultimo_pago', width=170, anchor=tk.CENTER)
+        self.tree.column('notas', width=240, anchor=tk.W)
         
         # Posicionar elementos
         self.tree.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
@@ -700,12 +742,19 @@ class SistemaControlPagos:
         scrollbar_y.config(command=self.tree.yview)
         scrollbar_x.config(command=self.tree.xview)
         
-        # Tags para colores
-        self.tree.tag_configure('pagado', background='#c8e6c9', foreground='#1b5e20')
-        self.tree.tag_configure('pendiente', background='#ffccbc', foreground='#bf360c')
-        self.tree.tag_configure('parcial', background='#fff9c4', foreground='#f57f17')
-        self.tree.tag_configure('pago_ok', background='#66bb6a', foreground='#fff')
-        self.tree.tag_configure('pago_parcial', background='#ffa726', foreground='#fff')
+        # Menú contextual sobre filas
+        tema_visual = TEMA_CLARO if self.tema_actual.get() == 'claro' else TEMA_OSCURO
+        self.menu_persona = tk.Menu(self.root, tearoff=0,
+                        bg=tema_visual['bg_secundario'],
+                        fg=tema_visual['fg_principal'],
+                        activebackground=tema_visual['accent_secondary'],
+                        activeforeground=tema_visual['fg_principal'])
+        self.menu_persona.add_command(label=f"{ICONOS['editar']} Editar persona", command=self.editar_persona)
+        self.menu_persona.add_command(label=f"{ICONOS['guardar']} Registrar pago", command=self.registrar_pago)
+        self.menu_persona.add_command(label=f"{ICONOS['eliminar']} Eliminar", command=self.eliminar_persona)
+        self.menu_persona.add_separator()
+        self.menu_persona.add_command(label=f"{ICONOS['buscar']} Ver historial", command=self.ver_historial_completo)
+        self.tree.bind('<Button-3>', self._mostrar_menu_persona)
         
         self.actualizar_visibilidad_columnas()
         self.refrescar_selector_cooperacion()
@@ -1068,23 +1117,51 @@ class SistemaControlPagos:
         # Diálogo para registrar pago
         dialog = tk.Toplevel(self.root)
         dialog.title("Registrar Pago")
-        dialog.geometry("400x280")
+        dialog.geometry("520x420")
         dialog.transient(self.root)
         dialog.grab_set()
         
         tamaños = self.obtener_tamaños()
         colores = self.obtener_colores()
-        
-        ttk.Label(dialog, text=f"Persona: {persona['nombre']}", font=('Arial', tamaños['titulo'], 'bold')).pack(pady=5)
-        ttk.Label(dialog, text=f"Folio: {persona.get('folio', 'SIN-FOLIO')}", font=('Arial', tamaños['normal'], 'italic')).pack(pady=2)
-        ttk.Label(dialog, text=f"Total Esperado: ${monto_esperado:.2f}").pack(pady=2)
-        ttk.Label(dialog, text=f"Ya Pagado: ${total_pagado:.2f}").pack(pady=2)
-        ttk.Label(dialog, text=f"Pendiente: ${pendiente:.2f}", foreground=colores['error_fg']).pack(pady=2)
-        
-        ttk.Label(dialog, text="\nMonto de este pago:", font=('Arial', tamaños['normal'], 'bold')).pack(pady=5)
+        tema_visual = TEMA_CLARO if self.tema_actual.get() == 'claro' else TEMA_OSCURO
+        dialog.configure(bg=tema_visual['bg_principal'])
+
+        header = tk.Frame(dialog, bg=tema_visual['bg_secundario'])
+        header.pack(fill=tk.X, padx=14, pady=(14, 10))
+        tk.Label(header, text=ICONOS['usuario'], font=('Segoe UI', 28),
+                 bg=tema_visual['bg_secundario'], fg=tema_visual['accent_primary']).pack(side=tk.LEFT, padx=(0, 12))
+        info_text = tk.Frame(header, bg=tema_visual['bg_secundario'])
+        info_text.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        tk.Label(info_text, text=persona['nombre'], font=FUENTES['titulo'],
+                 bg=tema_visual['bg_secundario'], fg=tema_visual['fg_principal']).pack(anchor=tk.W)
+        tk.Label(info_text, text=f"Folio {persona.get('folio', 'SIN-FOLIO')}", font=FUENTES['pequeño'],
+                 bg=tema_visual['bg_secundario'], fg=tema_visual['fg_secundario']).pack(anchor=tk.W)
+
+        resumen = tk.Frame(dialog, bg=tema_visual['bg_principal'])
+        resumen.pack(fill=tk.X, padx=16, pady=(4, 12))
+        def chip(parent, label, valor, color_fg):
+            cont = tk.Frame(parent, bg=tema_visual['bg_secundario'], padx=10, pady=8)
+            cont.pack(side=tk.LEFT, padx=6, fill=tk.X, expand=True)
+            tk.Label(cont, text=label, font=FUENTES['pequeño'],
+                     bg=tema_visual['bg_secundario'], fg=tema_visual['fg_secundario']).pack(anchor=tk.W)
+            tk.Label(cont, text=valor, font=FUENTES['titulo'],
+                     bg=tema_visual['bg_secundario'], fg=color_fg).pack(anchor=tk.W)
+        chip(resumen, "Esperado", f"${monto_esperado:.2f}", tema_visual['fg_principal'])
+        chip(resumen, "Pagado", f"${total_pagado:.2f}", colores['exito_fg'])
+        chip(resumen, "Pendiente", f"${pendiente:.2f}", colores['error_fg'])
+
+        form = tk.Frame(dialog, bg=tema_visual['bg_principal'])
+        form.pack(fill=tk.BOTH, expand=True, padx=16, pady=(0, 12))
+        tk.Label(form, text="Monto de este pago", font=FUENTES['subtitulo'],
+                 bg=tema_visual['bg_principal'], fg=tema_visual['fg_principal']).pack(anchor=tk.W, pady=(0, 6))
         monto_var = tk.DoubleVar(value=pendiente)
-        monto_entry = ttk.Entry(dialog, textvariable=monto_var, width=20)
-        monto_entry.pack(pady=5)
+        monto_entry = tk.Entry(form, textvariable=monto_var, font=FUENTES['titulo'], width=18,
+                               bg=tema_visual['input_bg'], fg=tema_visual['fg_principal'],
+                               relief=tk.SOLID, bd=1, insertbackground=tema_visual['accent_primary'])
+        monto_entry.pack(anchor=tk.W, pady=(0, 10))
+        tk.Label(form, text="Puedes registrar pagos parciales. Si ingresas más que el pendiente se te pedirá confirmar.",
+                 font=FUENTES['pequeño'], bg=tema_visual['bg_principal'], fg=tema_visual['fg_secundario'], wraplength=460,
+                 justify=tk.LEFT).pack(anchor=tk.W)
         
         def guardar_pago(event=None):
             try:
@@ -1114,6 +1191,22 @@ class SistemaControlPagos:
                     persona['pagos'] = []
                 
                 persona['pagos'].append(pago)
+
+                # Registrar en historial de auditoría
+                cambios_hist = {
+                    'monto': monto_pago,
+                    'total_anterior': total_pagado,
+                    'total_nuevo': total_pagado + monto_pago,
+                    'pendiente_anterior': pendiente,
+                    'pendiente_nuevo': max(0, pendiente - monto_pago)
+                }
+                self.gestor_historial.registrar_cambio(
+                    'PAGO',
+                    'PERSONA',
+                    persona.get('folio', 'SIN-FOLIO'),
+                    cambios_hist,
+                    self.usuario_actual['nombre'] if self.usuario_actual else 'Sistema'
+                )
                 
                 # Registrar en log
                 registrar_operacion('PAGO_REGISTRADO', 'Pago registrado correctamente', {
@@ -1147,10 +1240,16 @@ class SistemaControlPagos:
                 registrar_error('control_pagos', 'registrar_pago', str(e))
                 messagebox.showerror("Error", f"No se pudo registrar el pago: {e}")
         
-        botones = ttk.Frame(dialog)
-        botones.pack(pady=15)
-        ttk.Button(botones, text="Registrar", command=guardar_pago, width=18).pack(side=tk.LEFT, padx=5)
-        ttk.Button(botones, text="Cancelar", command=dialog.destroy, width=12).pack(side=tk.LEFT, padx=5)
+        botones = tk.Frame(dialog, bg=tema_visual['bg_principal'])
+        botones.pack(fill=tk.X, pady=18, padx=16)
+        tk.Button(botones, text=f"{ICONOS['guardar']} Registrar", command=guardar_pago,
+              font=FUENTES['botones'], bg=tema_visual['accent_primary'], fg='#ffffff',
+              relief=tk.FLAT, padx=16, pady=10, cursor='hand2',
+              activebackground=tema_visual['accent_secondary']).pack(side=tk.LEFT, padx=(0, 10), expand=True, fill=tk.X)
+        tk.Button(botones, text=f"{ICONOS['cerrar']} Cancelar", command=dialog.destroy,
+              font=FUENTES['botones'], bg=tema_visual['error'], fg='#ffffff',
+              relief=tk.FLAT, padx=14, pady=10, cursor='hand2',
+              activebackground='#bb2d3b').pack(side=tk.LEFT, expand=True, fill=tk.X)
         dialog.bind("<Return>", guardar_pago)
         monto_entry.focus()
         monto_entry.select_range(0, tk.END)
@@ -1297,7 +1396,7 @@ class SistemaControlPagos:
                                criterio in p.get('folio', '').lower()]
         
         # Agregar personas
-        for persona in personas_mostrar:
+        for idx, persona in enumerate(personas_mostrar):
             # Migrar datos antiguos si es necesario
             if 'monto_esperado' not in persona:
                 persona['monto_esperado'] = persona.get('monto', 100)
@@ -1337,7 +1436,7 @@ class SistemaControlPagos:
                                   estado,
                                   ultimo_pago,
                                   persona.get('notas', '')),
-                           tags=(tag,))
+                           tags=(tag, 'fila_par' if idx % 2 == 0 else 'fila_impar'))
             self.tree_persona_map[iid] = persona
         
         # Actualizar contador de personas
@@ -1347,6 +1446,17 @@ class SistemaControlPagos:
             self.total_personas_label.config(text=str(total_general))
         else:
             self.total_personas_label.config(text=f"{total_mostradas} de {total_general}")
+
+    def _mostrar_menu_persona(self, event):
+        """Mostrar menú contextual sobre la fila seleccionada"""
+        iid = self.tree.identify_row(event.y)
+        if not iid:
+            return
+        self.tree.selection_set(iid)
+        try:
+            self.menu_persona.tk_popup(event.x_root, event.y_root)
+        finally:
+            self.menu_persona.grab_release()
     
     def actualizar_totales(self):
         total_pagado = 0

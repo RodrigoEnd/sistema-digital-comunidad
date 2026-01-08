@@ -1,17 +1,25 @@
 ==============================================
-   SISTEMA COMPLETADO - GUIA RAPIDA
+  SISTEMA DIGITAL COMUNIDAD - GUIA RAPIDA
 ==============================================
 
-ARCHIVOS CREADOS:
------------------
-src/
-  ├── base_datos.py          (Base de datos con 10 nombres de muestra)
-  ├── api_local.py           (Servidor API)
-  ├── censo_habitantes.py    (Sistema de censo)
-  ├── control_pagos.py       (Sistema de pagos)
-  └── seguridad.py           (Módulo de seguridad y encriptación)
+PUNTOS DE ENTRADA:
+------------------
+- main.py            (Menú principal: censo o control de pagos)
+- src/api_local.py   (Servidor API local, se inicia solo desde main/control_pagos)
 
-iniciar.ps1                  (Script de inicio)
+ARCHIVOS CLAVE:
+---------------
+src/
+  ├── api_local.py           (Servidor API)
+  ├── censo_habitantes.py    (Censo de habitantes con tema moderno)
+  ├── control_pagos.py       (Pagos con autenticación, tema moderno y menú contextual)
+  ├── login_window.py        (Ventana de login moderna)
+  ├── tema_moderno.py        (Paletas, fuentes, espaciado, iconos)
+  ├── historial.py           (Auditoría persistente con exportación CSV/TXT)
+  ├── seguridad.py           (Cifrado y hash)
+  └── config.py              (Config global, rutas seguras, temas)
+
+iniciar.ps1                  (Script de inicio rápido)
 requirements.txt             (Dependencias)
 
 
@@ -28,64 +36,70 @@ SEGURIDAD IMPLEMENTADA:
 COMO INICIAR:
 -------------
 
-OPCION 1 - Script Automatico:
-  ./iniciar.ps1
+OPCION 1 - Menú principal (recomendada):
+  1) Activar el entorno: venv\Scripts\activate
+  2) python main.py
+  3) Elegir 1 (censo) o 2 (control de pagos). La API se inicia sola si no está activa.
 
 OPCION 2 - Manual:
-  1. python src/api_local.py        (Primero el servidor)
-  2. python src/censo_habitantes.py (Censo - opcional)
-  3. python src/control_pagos.py    (Control de pagos)
+  1) python src/api_local.py
+  2) python src/censo_habitantes.py (censo)
+  3) python src/control_pagos.py    (pagos)
+
+Credenciales demo (control de pagos): usuario=admin contraseña=admin123
 
 
-CARACTERISTICAS IMPLEMENTADAS:
--------------------------------
+CARACTERISTICAS CLAVE:
+----------------------
 
-- Sistema de Folios:
-  - Folios unicos HAB-0001, HAB-0002, etc.
-  - Ordenamiento alfabetico automatico
-  - Sincronizacion entre sistemas
+- Folios y sincronizacion:
+  - Folios HAB-0001, HAB-0002, etc., orden alfabetico y sin duplicados.
+  - Sincronizacion Pagos↔Censo; si no existe en censo se crea.
 
-- Sistema de Pagos:
-  - NO solicita monto al agregar persona (usa el monto general)
-  - Monto protegido con contraseña
-  - Pagos parciales con historial (fecha y hora)
-  - Busqueda en tiempo real
+- Pagos modernos:
+  - Autenticacion con roles; login redimensionable.
+  - Tema claro/oscuro, tabla con zebra, menú contextual (clic derecho) para editar/pagar/eliminar/ver historial.
+  - Pagos parciales y completos con auditoria detallada (antes/despues) y animacion de fila.
+  - Exportar cooperacion a Excel.
 
-- Sistema de Censo:
-  - 10 nombres de muestra incluidos
-  - Busqueda por nombre o folio
-  - Registro de nuevos habitantes
+- Censo moderno:
+  - Tema claro/oscuro aplicado, fuentes modernas, tabla con scroll.
+  - Busqueda en tiempo real y agregado de habitantes.
 
-- Sincronizacion Automatica:
-  - Si agregas alguien en PAGOS que no esta en CENSO
-    -> Se agrega automaticamente al censo
-  - Los folios se mantienen sincronizados
+- Historial y auditoria:
+  - Ventana de historial con filtros y detalles.
+  - Exportacion a TXT o CSV.
+  - Registro de pagos, creaciones, ediciones y eliminaciones con usuario y timestamp.
+
+- Respaldo y seguridad:
+  - Datos cifrados en AppData\Local\SistemaComunidad.
+  - Hash bcrypt, cifrado AES-256, HMAC, archivos ocultos.
+  - Prompt de backup al cerrar Pagos; limpieza de backups antiguos.
 
 
 PRIMER USO:
 -----------
-1. Ejecutar: pip install -r requirements.txt
-2. Iniciar API: python src/api_local.py
-3. Iniciar Pagos: python src/control_pagos.py
-4. Establecer contraseña (primera vez)
-5. Listo para usar
+1. python -m venv venv
+2. venv\Scripts\activate
+3. pip install -r requirements.txt
+4. python main.py (elige opción 2), establece contraseña la primera vez.
 
 
 DATOS DE PRUEBA:
 ----------------
-- 10 habitantes de muestra pre-cargados
-- Ordenados alfabeticamente
-- Con folios desde HAB-0001 hasta HAB-0010
+- 10 habitantes de muestra pre-cargados (HAB-0001 a HAB-0010)
+- Usuario demo: admin / admin123
 
 
 UBICACION DE DATOS:
 -------------------
-Los archivos se guardan de forma segura y cifrada en:
+Los archivos se guardan cifrados en:
 C:\Users\[TuUsuario]\AppData\Local\SistemaComunidad\
 
 Archivos protegidos:
 - base_datos_habitantes.json (cifrado)
 - datos_pagos.json (cifrado)
+- historial_cambios.json (cifrado)
 - Carpeta oculta del sistema
 
 

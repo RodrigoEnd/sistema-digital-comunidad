@@ -2,11 +2,13 @@ import json
 import os
 from datetime import datetime
 from seguridad import seguridad
+from config import ARCHIVO_HABITANTES, PASSWORD_CIFRADO
+from logger import registrar_operacion, registrar_error
 
 class BaseDatos:
-    def __init__(self, archivo="base_datos_habitantes.json"):
+    def __init__(self, archivo=ARCHIVO_HABITANTES):
         self.archivo = archivo
-        self.password = "SistemaComunidad2026"  # Contraseña para cifrado de archivos
+        self.password = PASSWORD_CIFRADO
         self.habitantes = []
         self.cargar_datos()
         
@@ -70,6 +72,7 @@ class BaseDatos:
         """Agregar un nuevo habitante con asignación automática de folio"""
         # Verificar si ya existe
         if any(h['nombre'].lower() == nombre.lower() for h in self.habitantes):
+            registrar_operacion('AGREGAR_HABITANTE', 'Intento duplicado', {'nombre': nombre})
             return None, "Ya existe un habitante con ese nombre"
         
         nuevo_habitante = {
@@ -85,6 +88,7 @@ class BaseDatos:
         
         # Obtener el folio asignado
         habitante = next((h for h in self.habitantes if h['nombre'] == nombre), None)
+        registrar_operacion('AGREGAR_HABITANTE', 'Habitante agregado', {'nombre': nombre, 'folio': habitante['folio'] if habitante else 'N/A'})
         return habitante, "Habitante agregado correctamente"
     
     def reordenar_y_asignar_folios(self):
@@ -128,8 +132,12 @@ class BaseDatos:
                 'fecha_actualizacion': datetime.now().strftime("%d/%m/%Y %H:%M:%S")
             }
             
-            return seguridad.cifrar_archivo(datos, self.archivo, self.password)
+            resultado = seguridad.cifrar_archivo(datos, self.archivo, self.password)
+            if resultado:
+                registrar_operacion('GUARDAR_DATOS', 'Datos guardados', {'total_habitantes': len(self.habitantes)})
+            return resultado
         except Exception as e:
+            registrar_error('GUARDAR_DATOS', str(e))
             print(f"Error al guardar: {str(e)}")
             return False
     
