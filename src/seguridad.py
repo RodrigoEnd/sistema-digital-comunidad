@@ -3,6 +3,7 @@ import json
 import bcrypt
 import hmac
 import hashlib
+import shutil
 from pathlib import Path
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
@@ -51,7 +52,7 @@ class SeguridadManager:
         return base64.urlsafe_b64encode(clave)
     
     def cifrar_archivo(self, datos, nombre_archivo, password):
-        """Cifra y guarda un archivo JSON"""
+        """Cifra y guarda un archivo JSON con reintentos"""
         try:
             ruta_completa = os.path.join(self.ruta_segura, nombre_archivo)
             
@@ -68,17 +69,42 @@ class SeguridadManager:
             h = hmac.new(password.encode(), datos_cifrados, hashlib.sha256)
             hmac_digest = h.hexdigest()
             
-            # Guardar: HMAC + datos cifrados
-            with open(ruta_completa, 'wb') as f:
-                f.write(hmac_digest.encode() + b'\n' + datos_cifrados)
+            # Guardar con reintentos en caso de archivo bloqueado
+            contenido_a_guardar = hmac_digest.encode() + b'\n' + datos_cifrados
+            max_intentos = 3
             
-            # Ocultar archivo
-            try:
-                import ctypes
-                FILE_ATTRIBUTE_HIDDEN = 0x02
-                ctypes.windll.kernel32.SetFileAttributesW(ruta_completa, FILE_ATTRIBUTE_HIDDEN)
-            except:
-                pass
+            for intento in range(max_intentos):
+                try:
+                    # Si el archivo existe, crear backup primero
+                    if os.path.exists(ruta_completa):
+                        try:
+                            backup_ruta = ruta_completa + '.bak'
+                            if os.path.exists(backup_ruta):
+                                os.remove(backup_ruta)
+                            shutil.copy2(ruta_completa, backup_ruta)
+                        except:
+                            pass
+                    
+                    # Escribir archivo de forma atomica
+                    with open(ruta_completa, 'wb') as f:
+                        f.write(contenido_a_guardar)
+                    
+                    # Ocultar archivo
+                    try:
+                        import ctypes
+                        FILE_ATTRIBUTE_HIDDEN = 0x02
+                        ctypes.windll.kernel32.SetFileAttributesW(ruta_completa, FILE_ATTRIBUTE_HIDDEN)
+                    except:
+                        pass
+                    
+                    return True
+                    
+                except (IOError, OSError) as e:
+                    if intento < max_intentos - 1:
+                        import time
+                        time.sleep(0.5)  # Esperar 500ms antes de reintentar
+                    else:
+                        raise e
             
             return True
         except Exception as e:
@@ -86,16 +112,31 @@ class SeguridadManager:
             return False
     
     def descifrar_archivo(self, nombre_archivo, password):
-        """Descifra y carga un archivo JSON"""
+        """Descifra y carga un archivo JSON con reintentos"""
         try:
             ruta_completa = os.path.join(self.ruta_segura, nombre_archivo)
             
             if not os.path.exists(ruta_completa):
                 return None
             
-            # Leer archivo
-            with open(ruta_completa, 'rb') as f:
-                contenido = f.read()
+            # Intentar leer con reintentos
+            max_intentos = 3
+            contenido = None
+            
+            for intento in range(max_intentos):
+                try:
+                    with open(ruta_completa, 'rb') as f:
+                        contenido = f.read()
+                    break
+                except (IOError, OSError):
+                    if intento < max_intentos - 1:
+                        import time
+                        time.sleep(0.5)
+                    else:
+                        return None
+            
+            if contenido is None:
+                return None
             
             # Separar HMAC y datos
             lineas = contenido.split(b'\n', 1)
