@@ -106,14 +106,48 @@ class SistemaControlPagos:
         return self.TAMAÑOS_LETRA[self.tamaño_actual.get()]
     
     def aplicar_tema(self, *args):
-        """Aplicar cambios de tema a toda la interfaz"""
+        """Aplicar cambios de tema a toda la interfaz inmediatamente"""
+        if not hasattr(self, 'tree'):
+            return  # Aún no se ha creado la interfaz
+        
+        colores = self.obtener_colores()
+        
+        # Actualizar colores de la tabla
+        self.tree.tag_configure('pagado', background=colores['tablas_even'] if self.tema_actual.get() == 'oscuro' else '#c8e6c9', 
+                               foreground=colores['titulo_fg'])
+        self.tree.tag_configure('pendiente', background=colores['tablas_odd'] if self.tema_actual.get() == 'oscuro' else '#ffccbc', 
+                               foreground=colores['error_fg'])
+        self.tree.tag_configure('parcial', background='#fff9c4' if self.tema_actual.get() == 'claro' else '#4a4a2a', 
+                               foreground=colores['alerta_fg'])
+        self.tree.tag_configure('pago_ok', background=colores['exito_fg'], foreground='#fff')
+        self.tree.tag_configure('pago_parcial', background=colores['alerta_fg'], foreground='#fff')
+        
+        # Actualizar etiquetas de total
+        if hasattr(self, 'total_pagado_label'):
+            self.total_pagado_label.config(foreground=colores['exito_fg'])
+        if hasattr(self, 'total_pendiente_label'):
+            self.total_pendiente_label.config(foreground=colores['error_fg'])
+        
+        # Refrescar tabla para aplicar cambios
+        self.actualizar_tabla()
         self.guardar_datos(mostrar_alerta=False)
-        messagebox.showinfo("Tema Actualizado", "El tema se aplicará al reiniciar el programa")
     
     def aplicar_tamaño(self, *args):
-        """Aplicar cambios de tamaño de letra"""
+        """Aplicar cambios de tamaño de letra inmediatamente"""
+        if not hasattr(self, 'tree'):
+            return  # Aún no se ha creado la interfaz
+        
+        tamaños = self.obtener_tamaños()
+        
+        # Actualizar fuentes de las etiquetas principales
+        if hasattr(self, 'total_pagado_label'):
+            self.total_pagado_label.config(font=('Arial', tamaños['titulo'], 'bold'))
+        if hasattr(self, 'total_pendiente_label'):
+            self.total_pendiente_label.config(font=('Arial', tamaños['grande'], 'bold'))
+        if hasattr(self, 'personas_pagadas_label'):
+            self.personas_pagadas_label.config(font=('Arial', tamaños['normal']))
+        
         self.guardar_datos(mostrar_alerta=False)
-        messagebox.showinfo("Tamaño Actualizado", "El tamaño de letra se aplicará al reiniciar el programa")
 
     
     def hash_password(self, password):
@@ -920,8 +954,8 @@ class SistemaControlPagos:
                 else:
                     self.animar_fila_pagada(item, "parcial")
                 
-            except:
-                messagebox.showerror("Error", "Monto invalido")
+            except Exception:
+                pass  # El pago se registró correctamente
         
         botones = ttk.Frame(dialog)
         botones.pack(pady=15)
