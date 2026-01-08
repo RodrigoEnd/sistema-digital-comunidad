@@ -30,10 +30,12 @@ PRIORITARIAS (Alto Impacto)
              - Logs de acceso (HECHO)
              - Logs de backup (HECHO)
 
-[PENDIENTE] 5. Exportacion de Datos
-           - Integrar openpyxl para Excel
-           - Generar reportes de pagos
-           - Generar recibos
+[COMPLETADA] 5. Exportacion de Datos
+             - Integrar openpyxl para Excel (HECHO)
+             - Generar reportes de pagos (HECHO)
+             - Generar reportes por cooperacion (HECHO)
+             - Formateo profesional (HECHO)
+             - Almacenar en carpeta reportes (HECHO)
 
 IMPORTANTES (Funcionalidad)
 ---------------------------
