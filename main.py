@@ -83,7 +83,9 @@ def main():
     print("="*60)
     print("1. Censo de Habitantes")
     print("2. Control de Pagos (con autenticación)")
-    print("3. Salir")
+    print("3. Registro de Faenas (con autenticación)")
+    print("4. Salir")
+    print("5. Generar simulación anual (2025)")
     print("="*60)
     
     # Verificar/iniciar API (omitir si modo offline)
@@ -99,7 +101,7 @@ def main():
     else:
         print("\nModo offline: API no requerida")
     
-    opcion = input("\nSeleccione una opción (1-3): ").strip()
+    opcion = input("\nSeleccione una opción (1-5): ").strip()
     
     if opcion == "1":
         # Iniciar censo
@@ -129,8 +131,35 @@ def main():
             input("Presiona Enter para salir...")
     
     elif opcion == "3":
+        # Iniciar registro de faenas con autenticación
+        try:
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            os.chdir(os.path.join(script_dir, "src"))
+            from src.control_faenas import main as faenas_main
+            faenas_main()
+        except Exception as e:
+            print(f"Error al iniciar registro de faenas: {e}")
+            import traceback
+            traceback.print_exc()
+            input("Presiona Enter para salir...")
+
+    elif opcion == "4":
         print("\nSaliendo del sistema...")
         return
+    
+    elif opcion == "5":
+        # Generar datos simulados de faenas 2025
+        try:
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            os.chdir(os.path.join(script_dir, "src"))
+            from src.simulador_faenas import generar_simulacion_2025
+            generar_simulacion_2025()
+            print("\n✓ Simulación creada. Ahora abre 'Registro de Faenas' para ver el resumen anual.")
+        except Exception as e:
+            print(f"Error al generar simulación: {e}")
+            import traceback
+            traceback.print_exc()
+            input("Presiona Enter para salir...")
     
     else:
         print("\nOpción inválida")

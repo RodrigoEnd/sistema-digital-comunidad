@@ -10,6 +10,7 @@ from config import API_URL, TEMAS
 from tema_moderno import TEMA_CLARO, TEMA_OSCURO, FUENTES
 from logger import registrar_operacion, registrar_error
 from validadores import validar_nombre
+from indicadores_estado import calcular_estado_habitante
 
 class SistemaCensoHabitantes:
     def __init__(self, root):
@@ -102,6 +103,37 @@ class SistemaCensoHabitantes:
         
         self.total_label = ttk.Label(header_frame, text="Total Habitantes: 0", font=('Arial', 11, 'bold'))
         self.total_label.grid(row=1, column=2, sticky=tk.E, padx=5)
+
+        # Indicadores de estado: pagos y faenas
+        indicadores_frame = tk.Frame(header_frame, bg='#f0f0f0')
+        indicadores_frame.grid(row=2, column=0, columnspan=2, sticky=tk.W, padx=5, pady=4)
+        
+        ttk.Label(indicadores_frame, text="Estado de la Comunidad:", font=FUENTES['pequeño']).pack(side=tk.LEFT, padx=5)
+        
+        # Indicador de pagos
+        self.canvas_pagos = tk.Canvas(indicadores_frame, width=25, height=25, bg='#f0f0f0', 
+                                       highlightthickness=0, cursor='hand2')
+        self.canvas_pagos.pack(side=tk.LEFT, padx=2)
+        self.canvas_pagos.bind('<Enter>', lambda e: self.mostrar_tooltip_pagos())
+        self.canvas_pagos.bind('<Leave>', lambda e: self.ocultar_tooltip())
+        
+        ttk.Label(indicadores_frame, text="Pagos", font=FUENTES['pequeño']).pack(side=tk.LEFT, padx=(0, 10))
+        
+        # Indicador de faenas
+        self.canvas_faenas = tk.Canvas(indicadores_frame, width=25, height=25, bg='#f0f0f0', 
+                                        highlightthickness=0, cursor='hand2')
+        self.canvas_faenas.pack(side=tk.LEFT, padx=2)
+        self.canvas_faenas.bind('<Enter>', lambda e: self.mostrar_tooltip_faenas())
+        self.canvas_faenas.bind('<Leave>', lambda e: self.ocultar_tooltip())
+        
+        ttk.Label(indicadores_frame, text="Faenas", font=FUENTES['pequeño']).pack(side=tk.LEFT)
+        
+        # Botón adicional: abrir faenas
+        ttk.Button(header_frame, text="Abrir Registro de Faenas",
+                    command=self.abrir_registro_faenas, width=24).grid(row=2, column=2, padx=5, pady=4, sticky=tk.E)
+        
+        # Tooltip
+        self.tooltip_label = None
         
         # ===== BUSQUEDA =====
         search_frame = ttk.LabelFrame(main_frame, text="Busqueda", padding="10")
@@ -193,6 +225,98 @@ class SistemaCensoHabitantes:
                            tags=(tag,))
         
         self.total_label.config(text=f"Total Habitantes: {len(habitantes)}")
+        # Actualizar indicadores de estado
+        self.actualizar_indicadores_estado()
+
+    def actualizar_indicadores_estado(self):
+        """Actualiza los indicadores de estado de pagos y faenas para toda la comunidad"""
+        try:
+            total_pagos = 0.0
+            total_faenas = 0.0
+            count = 0
+            
+            for hab in self.habitantes:
+                folio = hab.get('folio', '')
+                nombre = hab.get('nombre', '')
+                estado = calcular_estado_habitante(folio, nombre)
+                total_pagos += estado['pagos']['ratio']
+                total_faenas += estado['faenas']['ratio']
+                count += 1
+            
+            if count > 0:
+                ratio_pagos_promedio = total_pagos / count
+                ratio_faenas_promedio = total_faenas / count
+            else:
+                ratio_pagos_promedio = 0.5
+                ratio_faenas_promedio = 0.5
+            
+            # Dibujar rectángulos con color según ratio
+            color_pagos = self._color_por_ratio(ratio_pagos_promedio)
+            color_faenas = self._color_por_ratio(ratio_faenas_promedio)
+            
+            self.canvas_pagos.delete('all')
+            self.canvas_pagos.create_rectangle(2, 2, 23, 23, fill=color_pagos, outline='#333', width=2)
+            
+            self.canvas_faenas.delete('all')
+            self.canvas_faenas.create_rectangle(2, 2, 23, 23, fill=color_faenas, outline='#333', width=2)
+            
+            # Guardar para tooltip
+            self.estado_pagos_promedio = ratio_pagos_promedio
+            self.estado_faenas_promedio = ratio_faenas_promedio
+        except Exception as e:
+            print(f"Error actualizando indicadores: {e}")
+    
+    def _color_por_ratio(self, ratio):
+        """Convierte ratio a color hexadecimal"""
+        if ratio < 0.5:
+            t = ratio * 2
+            r = int(220 + (255 - 220) * t)
+            g = int(53 + (193 - 53) * t)
+            b = int(69 - 69 * t)
+        else:
+            t = (ratio - 0.5) * 2
+            r = int(255 + (40 - 255) * t)
+            g = int(193 + (167 - 193) * t)
+            b = int(0 + (69 - 0) * t)
+        return f"#{r:02x}{g:02x}{b:02x}"
+    
+    def mostrar_tooltip_pagos(self):
+        """Muestra tooltip para indicador de pagos"""
+        if hasattr(self, 'estado_pagos_promedio'):
+            ratio = self.estado_pagos_promedio
+            if ratio >= 0.8:
+                texto = "Pagos: Al día ✓"
+            elif ratio >= 0.5:
+                texto = "Pagos: Deuda moderada"
+            else:
+                texto = "Pagos: Deuda crítica ⚠"
+            self._mostrar_tooltip(texto)
+    
+    def mostrar_tooltip_faenas(self):
+        """Muestra tooltip para indicador de faenas"""
+        if hasattr(self, 'estado_faenas_promedio'):
+            ratio = self.estado_faenas_promedio
+            if ratio >= 0.8:
+                texto = "Faenas: Comunidad muy activa"
+            elif ratio >= 0.5:
+                texto = "Faenas: Participación media"
+            else:
+                texto = "Faenas: Baja participación ⚠"
+            self._mostrar_tooltip(texto)
+    
+    def _mostrar_tooltip(self, texto):
+        """Muestra un tooltip flotante"""
+        if self.tooltip_label:
+            self.tooltip_label.destroy()
+        self.tooltip_label = tk.Label(self.root, text=texto, bg='#333', fg='#fff', font=('Arial', 9),
+                                      padx=8, pady=4, relief=tk.FLAT, borderwidth=1)
+        self.tooltip_label.place(x=100, y=150)
+    
+    def ocultar_tooltip(self):
+        """Oculta el tooltip"""
+        if self.tooltip_label:
+            self.tooltip_label.destroy()
+            self.tooltip_label = None
 
     def actualizar_visibilidad_columnas(self):
         """Mostrar/ocultar columnas de nombre y folio"""
@@ -300,6 +424,22 @@ class SistemaCensoHabitantes:
             subprocess.Popen([sys.executable, pagos_path])
         except Exception as e:
             messagebox.showerror("Error", f"No se pudo abrir Control de Pagos:\n{str(e)}")
+
+    def abrir_registro_faenas(self):
+        """Lanza la app de registro de faenas"""
+        try:
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            faenas_path = os.path.join(script_dir, "control_faenas.py")
+
+            if not os.path.exists(faenas_path):
+                messagebox.showerror("Error", f"No se encontró el archivo:\n{faenas_path}")
+                return
+
+            # Abrir con año por defecto 2025 para ver el resumen anual simulado
+            subprocess.Popen([sys.executable, faenas_path, "--anio", "2025"])
+        except Exception as e:
+            messagebox.showerror("Error", f"No se pudo abrir Registro de Faenas:\n{str(e)}")
+
 
 def main():
     root = tk.Tk()

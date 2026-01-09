@@ -42,9 +42,9 @@ class BarraSuperior:
         
         # Toggle tema (sol/luna)
         self.btn_tema = tk.Button(control_frame, text=f"{ICONOS['luna']} Noche",
-                                 font=FUENTES['pequeño'], bg='#ffffff', fg=self.tema['accent_primary'],
-                                 relief=tk.FLAT, padx=ESPACIADO['md'], pady=ESPACIADO['sm'],
-                                 cursor='hand2', command=callback_cambio_tema)
+                     font=FUENTES['pequeño'], bg='#ffffff', fg=self.tema['accent_primary'],
+                     relief=tk.FLAT, padx=ESPACIADO['md'], pady=ESPACIADO['sm'],
+                     cursor='hand2', command=self.callback_cambio_tema)
         self.btn_tema.pack(side=tk.LEFT)
     
     def actualizar_tema(self, tema_dict):
@@ -55,7 +55,9 @@ class BarraSuperior:
             widget.config(bg=tema_dict['accent_primary'])
     
     def pack(self, **kwargs):
-        self.frame.pack(**kwargs, fill=tk.X)
+        # Evitar duplicar argumento fill cuando el caller lo pasa
+        fill_value = kwargs.pop('fill', tk.X)
+        self.frame.pack(fill=fill_value, **kwargs)
     
     def update_button_text(self, texto):
         """Actualizar texto del botón de tema"""

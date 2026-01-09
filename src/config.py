@@ -21,6 +21,7 @@ BCRYPT_ROUNDS = 12
 # Base de datos
 ARCHIVO_HABITANTES = "base_datos_habitantes.json"
 ARCHIVO_PAGOS = "datos_pagos.json"
+ARCHIVO_FAENAS = "datos_faenas.json"
 ARCHIVO_CONFIG = "config_usuario.json"
 
 # Interfaz
