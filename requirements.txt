@@ -1,22 +1,26 @@
-# Dependencias para el Sistema de Control de Pagos
-# Para ejecutar: pip install -r requirements.txt
+# Dependencias para el Sistema Digital de Gestión Comunitaria
+# Incluye: Censo de Habitantes, Control de Pagos y Registro de Faenas
+# Para instalar: pip install -r requirements.txt
 
-# Seguridad y encriptación
-cryptography>=41.0.0
-bcrypt>=4.1.0
+# === Seguridad y Encriptación ===
+cryptography>=41.0.0    # Cifrado Fernet para archivos sensibles (pagos, faenas)
+bcrypt>=4.1.0           # Hashing seguro de contraseñas
 
-# API Local y servidor
-flask>=3.0.0
-flask-cors>=4.0.0
+# === API Local y Servidor Flask ===
+flask>=3.0.0            # Servidor API REST local
+flask-cors>=4.0.0       # CORS para comunicación entre módulos
 
-# Cliente HTTP para comunicacion entre sistemas
-requests>=2.31.0
+# === Cliente HTTP ===
+requests>=2.31.0        # Comunicación HTTP entre sistemas (censo, pagos, faenas)
 
-# Exportación a Excel y reportes
-openpyxl>=3.1.0
-reportlab>=4.0.0
+# === Exportación de Reportes ===
+openpyxl>=3.1.0         # Generación de archivos Excel para reportes
+reportlab>=4.0.0        # Generación de PDFs (opcional)
 
-# Para generar archivos .exe
-pyinstaller==6.3.0
+# === Empaquetado ===
+pyinstaller>=6.3.0      # Crear ejecutables .exe para distribución
 
-# Tkinter viene incluido con Python, no requiere instalación adicional
+# === Notas ===
+# - Tkinter viene incluido con Python (no requiere instalación)
+# - Librerías estándar usadas: json, os, sys, datetime, uuid, random, logging, threading, subprocess
+# - Python 3.10+ recomendado para compatibilidad completa
