@@ -5,8 +5,8 @@ Proporciona colorimetría rojo-verde para visualizar deuda y participación.
 
 import os
 from datetime import datetime
-from seguridad import seguridad
-from config import ARCHIVO_PAGOS, ARCHIVO_FAENAS, PASSWORD_CIFRADO
+from src.auth.seguridad import seguridad
+from src.config import ARCHIVO_PAGOS, ARCHIVO_FAENAS, PASSWORD_CIFRADO
 
 
 class CalculadorIndicadores:

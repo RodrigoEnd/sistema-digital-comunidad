@@ -3,9 +3,9 @@ Ventana para ver el historial de cambios del sistema
 """
 import tkinter as tk
 from tkinter import ttk, messagebox
-from historial import GestorHistorial
+from src.modules.historial.historial import GestorHistorial
 from datetime import datetime
-from tema_moderno import TEMA_CLARO, TEMA_OSCURO, FUENTES
+from src.ui.tema_moderno import TEMA_CLARO, TEMA_OSCURO, FUENTES
 
 class VentanaHistorial:
     """Ventana para visualizar el historial de cambios"""

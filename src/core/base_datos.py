@@ -1,9 +1,9 @@
 import json
 import os
 from datetime import datetime
-from seguridad import seguridad
-from config import ARCHIVO_HABITANTES, PASSWORD_CIFRADO
-from logger import registrar_operacion, registrar_error
+from src.auth.seguridad import seguridad
+from src.config import ARCHIVO_HABITANTES, PASSWORD_CIFRADO
+from src.core.logger import registrar_operacion, registrar_error
 
 class BaseDatos:
     def __init__(self, archivo=ARCHIVO_HABITANTES):

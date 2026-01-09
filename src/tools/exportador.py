@@ -8,8 +8,8 @@ from datetime import datetime
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
-from config import CARPETA_REPORTES, FORMATO_FECHA_EXPORT
-from logger import registrar_operacion, registrar_error
+from src.config import CARPETA_REPORTES, FORMATO_FECHA_EXPORT
+from src.core.logger import registrar_operacion, registrar_error
 
 # Crear carpeta de reportes si no existe
 if not os.path.exists(CARPETA_REPORTES):

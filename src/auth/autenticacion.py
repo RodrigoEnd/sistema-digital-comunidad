@@ -7,8 +7,8 @@ import json
 import os
 from datetime import datetime, timedelta
 import bcrypt
-from config import RUTA_SEGURA
-from logger import registrar_acceso, registrar_operacion, registrar_error
+from src.config import RUTA_SEGURA
+from src.core.logger import registrar_acceso, registrar_operacion, registrar_error
 
 class GestorAutenticacion:
     """Gestor de autenticacion de usuarios"""

@@ -3,7 +3,7 @@ Modulo de validaciones centralizadas
 Contiene todas las funciones de validacion del sistema
 """
 
-from config import (
+from src.config import (
     LONGITUD_MINIMA_NOMBRE,
     LONGITUD_MAXIMA_NOMBRE,
     MONTO_MINIMO,

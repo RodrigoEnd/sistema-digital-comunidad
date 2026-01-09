@@ -4,7 +4,7 @@ Funciones auxiliares para mantenimiento y correccion de datos
 """
 
 import requests
-from logger import registrar_operacion, registrar_error
+from src.core.logger import registrar_operacion, registrar_error
 
 def detectar_folios_duplicados(personas):
     """

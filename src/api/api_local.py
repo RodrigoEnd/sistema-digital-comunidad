@@ -1,6 +1,14 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-from base_datos import db
+import sys
+import os
+
+# Configurar path para imports cuando se ejecuta directamente
+proyecto_raiz = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+if proyecto_raiz not in sys.path:
+    sys.path.insert(0, proyecto_raiz)
+
+from src.core.base_datos import db
 
 app = Flask(__name__)
 CORS(app)  # Permitir conexiones locales entre aplicaciones
@@ -127,6 +135,22 @@ if __name__ == '__main__':
     print("  GET  /api/habitantes")
     print("  GET  /api/habitantes/buscar?q=criterio")
     print("  GET  /api/habitantes/nombre/<nombre>")
+    print("  POST /api/habitantes")
+    print("  POST /api/sync/verificar")
+    print("  GET  /api/ping")
+    print("="*50)
+    print("Presiona Ctrl+C para detener el servidor\n")
+    
+    app.run(host='127.0.0.1', port=5000, debug=False)
+
+if __name__ == "__main__":
+    print("\n" + "="*50)
+    print("API Local - Sistema Comunidad")
+    print("="*50)
+    print("Iniciando servidor en http://127.0.0.1:5000")
+    print("\nEndpoints disponibles:")
+    print("  GET  /api/habitantes")
+    print("  GET  /api/habitantes/buscar")
     print("  POST /api/habitantes")
     print("  POST /api/sync/verificar")
     print("  GET  /api/ping")

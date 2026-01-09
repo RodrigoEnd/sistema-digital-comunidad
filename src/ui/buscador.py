@@ -4,7 +4,7 @@ Permite buscar y filtrar datos por multiples criterios
 """
 
 from datetime import datetime
-from logger import registrar_error
+from src.core.logger import registrar_error
 
 class BuscadorAvanzado:
     """Buscador con filtros avanzados"""

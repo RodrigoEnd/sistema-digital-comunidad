@@ -6,15 +6,22 @@ import sys
 import os
 from uuid import uuid4
 
-from tema_moderno import TEMA_CLARO, TEMA_OSCURO, FUENTES, ESPACIADO, ICONOS
-from ui_moderna import BarraSuperior, PanelModerno, BotonModerno
-from seguridad import seguridad
-from logger import registrar_operacion, registrar_error
-from historial import GestorHistorial
-from config import API_URL, PASSWORD_CIFRADO, ARCHIVO_FAENAS, MODO_OFFLINE
+# Configurar path para imports cuando se ejecuta directamente
+if __name__ == "__main__":
+    # Agregar la raíz del proyecto al path
+    proyecto_raiz = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+    if proyecto_raiz not in sys.path:
+        sys.path.insert(0, proyecto_raiz)
+
+from src.ui.tema_moderno import TEMA_CLARO, TEMA_OSCURO, FUENTES, ESPACIADO, ICONOS
+from src.ui.ui_moderna import BarraSuperior, PanelModerno, BotonModerno
+from src.auth.seguridad import seguridad
+from src.core.logger import registrar_operacion, registrar_error
+from src.modules.historial.historial import GestorHistorial
+from src.config import API_URL, PASSWORD_CIFRADO, ARCHIVO_FAENAS, MODO_OFFLINE
 
 try:
-    from base_datos import db
+    from src.core.base_datos import db
 except Exception:
     db = None
 
@@ -81,7 +88,10 @@ class SistemaFaenas:
             if not MODO_OFFLINE:
                 resp = requests.get(f"{API_URL}/habitantes", timeout=5)
                 if resp.status_code == 200:
-                    self.habitantes_cache = resp.json().get('habitantes', [])
+                    data = resp.json()
+                    self.habitantes_cache = data.get('habitantes', [])
+                    # Sincronizar automáticamente al cargar
+                    self._sincronizar_participantes_con_censo()
                     return
         except Exception:
             pass
@@ -91,6 +101,28 @@ class SistemaFaenas:
                 self.habitantes_cache = db.obtener_todos()
             except Exception:
                 self.habitantes_cache = []
+    
+    def _sincronizar_participantes_con_censo(self):
+        """Elimina participantes de faenas que ya no están en el censo"""
+        if not self.habitantes_cache:
+            return
+        
+        nombres_validos = {h.get('nombre', '').strip().lower() for h in self.habitantes_cache}
+        cambios = 0
+        
+        for faena in self.faenas:
+            participantes_validos = []
+            for p in faena.get('participantes', []):
+                nombre = p.get('nombre', '').strip().lower()
+                if nombre in nombres_validos:
+                    participantes_validos.append(p)
+                else:
+                    cambios += 1
+            faena['participantes'] = participantes_validos
+        
+        if cambios > 0:
+            self.guardar_datos(mostrar_alerta=False)
+            print(f"[FAENAS] Sincronizado: {cambios} participantes eliminados (no están en censo)")
 
     def _normalizar_faena(self, faena):
         """Asegura campos nuevos para faenas ya guardadas."""
@@ -971,14 +1003,21 @@ class SistemaFaenas:
 
 
 def main():
-    # Ventana principal oculta mientras se autentica
-    root = tk.Tk()
-    root.withdraw()
+    """Punto de entrada principal con autenticación"""
+    from src.auth.login_window import VentanaLogin
 
-    from login_window import VentanaLogin
+    # Crear ventana de login
+    login_root = tk.Tk()
 
     def on_login(usuario, gestor_auth):
-        root.deiconify()
+        """Callback cuando el login es exitoso"""
+        # Cerrar ventana de login
+        login_root.destroy()
+        
+        # Crear ventana principal
+        root = tk.Tk()
+        root.title(f"Registro de Faenas - {usuario['nombre']} ({usuario['rol']})")
+        
         # Permitir pasar año por defecto via argumentos (--anio 2025)
         default_year = None
         try:
@@ -991,9 +1030,8 @@ def main():
             default_year = None
 
         app = SistemaFaenas(root, usuario, gestor_auth, default_year=default_year)
-        root.title(f"Registro de Faenas - {usuario['nombre']} ({usuario['rol']})")
+        root.mainloop()
 
-    login_root = tk.Tk()
     VentanaLogin(login_root, on_login)
     login_root.mainloop()
 

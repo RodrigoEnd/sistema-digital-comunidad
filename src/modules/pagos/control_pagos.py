@@ -8,16 +8,24 @@ import subprocess
 import sys
 import time
 import threading
-from seguridad import seguridad
-from logger import registrar_operacion, registrar_error, registrar_transaccion
-from config import TEMAS, TAMAÑOS_LETRA, API_URL, PASSWORD_CIFRADO, ARCHIVO_PAGOS, MODO_OFFLINE
-from validadores import validar_nombre, validar_monto, ErrorValidacion
-from exportador import ExportadorExcel
-from backups import GestorBackups
-from historial import GestorHistorial
-from buscador import BuscadorAvanzado
-from tema_moderno import TEMA_CLARO, TEMA_OSCURO, FUENTES, ESPACIADO, ICONOS
-from ui_moderna import BarraSuperior, PanelModerno, BotonModerno
+
+# Configurar path para imports cuando se ejecuta directamente
+if __name__ == "__main__":
+    # Agregar la raíz del proyecto al path
+    proyecto_raiz = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+    if proyecto_raiz not in sys.path:
+        sys.path.insert(0, proyecto_raiz)
+
+from src.auth.seguridad import seguridad
+from src.core.logger import registrar_operacion, registrar_error, registrar_transaccion
+from src.config import TEMAS, TAMAÑOS_LETRA, API_URL, PASSWORD_CIFRADO, ARCHIVO_PAGOS, MODO_OFFLINE
+from src.core.validadores import validar_nombre, validar_monto, ErrorValidacion
+from src.tools.exportador import ExportadorExcel
+from src.tools.backups import GestorBackups
+from src.modules.historial.historial import GestorHistorial
+from src.ui.buscador import BuscadorAvanzado
+from src.ui.tema_moderno import TEMA_CLARO, TEMA_OSCURO, FUENTES, FUENTES_DISPLAY, ESPACIADO, ICONOS
+from src.ui.ui_moderna import BarraSuperior, PanelModerno, BotonModerno
 
 class SistemaControlPagos:
     # Los temas y tamaños ahora vienen de config.py
@@ -38,6 +46,7 @@ class SistemaControlPagos:
         self.tamaño_actual = tk.StringVar(value='normal')
         
         # Datos
+        self.cooperaciones = []  # Inicializar cooperaciones ANTES de cargar datos
         self.coop_activa_id = None
         self.cooperacion_actual = None  # Nombre descriptivo de la cooperacion activa
         self.personas = []
@@ -89,21 +98,42 @@ class SistemaControlPagos:
         
         self.nombre_visible = tk.BooleanVar(value=True)
         self.folio_visible = tk.BooleanVar(value=True)
-        
-        # Configurar interfaz
-        self.configurar_interfaz()
-        self.aplicar_tema()  # Aplicar tema inicial
+        self.cifras_visibles = True  # Para ocultar/mostrar cifras sensibles
         
         # Configurar backup automático al cerrar
         self.root.protocol("WM_DELETE_WINDOW", self.cerrar_aplicacion)
     
     def set_usuario(self, usuario, gestor_auth):
         """Configurar usuario autenticado"""
+        print("[SET_USUARIO] Iniciando...")
         self.usuario_actual = usuario
         self.gestor_auth = gestor_auth
         self.permisos_rol = self.gestor_auth.ROLES if self.gestor_auth else {}
+        print(f"[SET_USUARIO] Usuario: {usuario['nombre']}")
         registrar_operacion('LOGIN', 'Usuario inició sesión', 
             {'usuario': usuario['nombre'], 'rol': usuario['rol']}, usuario['nombre'])
+        
+        # Configurar la interfaz con el usuario establecido
+        print("[SET_USUARIO] Llamando a configurar_interfaz...")
+        try:
+            self.configurar_interfaz()
+            print("[SET_USUARIO] configurar_interfaz OK")
+        except Exception as e:
+            print(f"[SET_USUARIO] ERROR en configurar_interfaz: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
+        
+        print("[SET_USUARIO] Llamando a aplicar_tema...")
+        try:
+            self.aplicar_tema()
+            print("[SET_USUARIO] aplicar_tema OK")
+        except Exception as e:
+            print(f"[SET_USUARIO] ERROR en aplicar_tema: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
+        print("[SET_USUARIO] Completado")
 
     def _tiene_permiso(self, permiso):
         """Verifica permisos según rol actual"""
@@ -187,6 +217,18 @@ class SistemaControlPagos:
         # Refrescar tabla para aplicar cambios
         self.actualizar_tabla()
         self.guardar_datos(mostrar_alerta=False)
+    
+    def toggle_tema_desde_barra(self):
+        """Toggle de tema desde la barra superior"""
+        modo_actual = self.tema_actual.get()
+        nuevo_modo = 'oscuro' if modo_actual == 'claro' else 'claro'
+        self.tema_actual.set(nuevo_modo)
+        
+        # Actualizar texto del botón en la barra
+        if self.barra_superior:
+            icono = ICONOS['sol'] if nuevo_modo == 'oscuro' else ICONOS['luna']
+            texto = f"{icono} {'Claro' if nuevo_modo == 'oscuro' else 'Oscuro'}"
+            self.barra_superior.update_button_text(texto)
     
     def aplicar_tamaño(self, *args):
         """Aplicar cambios de tamaño de letra inmediatamente"""
@@ -497,6 +539,12 @@ class SistemaControlPagos:
                 return
             data = response.json()
             habitantes = data.get('habitantes', [])
+            total_censo = data.get('total', len(habitantes))
+            
+            # Verificar personas que están en cooperación pero NO en censo
+            nombres_censo = {h.get('nombre', '').strip().lower() for h in habitantes}
+            personas_no_en_censo = [p for p in coop.get('personas', []) 
+                                   if p.get('nombre', '').strip().lower() not in nombres_censo]
             
             existentes = {p.get('nombre', '').lower(): p for p in coop.get('personas', [])}
             for hab in habitantes:
@@ -514,22 +562,48 @@ class SistemaControlPagos:
                     }
                     coop['personas'].append(nuevo)
                     agregados += 1
+            
             self.personas = coop['personas']
             self.actualizar_tabla()
             self.actualizar_totales()
             self.guardar_datos(mostrar_alerta=False)
+            
             if mostrar_mensaje:
-                if agregados:
-                    messagebox.showinfo("Sincronizacion", f"Se agregaron {agregados} habitantes desde el censo\nTotal en cooperación: {len(self.personas)}")
+                mensaje = f"📊 SINCRONIZACIÓN CON CENSO\n\n"
+                mensaje += f"• Habitantes en censo: {total_censo}\n"
+                mensaje += f"• Personas en cooperación: {len(self.personas)}\n"
+                mensaje += f"• Agregados desde censo: {agregados}\n"
+                
+                if personas_no_en_censo:
+                    mensaje += f"\n⚠️ ADVERTENCIA:\n"
+                    mensaje += f"{len(personas_no_en_censo)} personas están en la cooperación pero NO en el censo:\n\n"
+                    for p in personas_no_en_censo[:5]:  # Mostrar solo las primeras 5
+                        mensaje += f"  - {p.get('nombre', 'Sin nombre')}\n"
+                    if len(personas_no_en_censo) > 5:
+                        mensaje += f"  ... y {len(personas_no_en_censo) - 5} más\n"
+                    mensaje += f"\n¿Deseas eliminar estas personas de la cooperación?"
+                    
+                    if messagebox.askyesno("Sincronización", mensaje):
+                        # Eliminar personas que no están en el censo
+                        coop['personas'] = [p for p in coop['personas'] 
+                                          if p.get('nombre', '').strip().lower() in nombres_censo]
+                        self.personas = coop['personas']
+                        self.actualizar_tabla()
+                        self.actualizar_totales()
+                        self.guardar_datos(mostrar_alerta=False)
+                        messagebox.showinfo("Éxito", f"Se eliminaron {len(personas_no_en_censo)} personas.\nTotal actual: {len(self.personas)}")
                 else:
-                    messagebox.showinfo("Sincronizacion", "No habia nuevos habitantes para agregar")
+                    if agregados > 0:
+                        messagebox.showinfo("Sincronización", mensaje + "\n✓ Sincronización completada correctamente")
+                    else:
+                        messagebox.showinfo("Sincronización", mensaje + "\n✓ Ya está sincronizado")
         except Exception as e:
             if mostrar_mensaje:
                 messagebox.showerror("Error", f"No se pudo sincronizar con el censo: {e}")
     
     def corregir_folios(self):
         """Detecta y corrige folios duplicados sincronizando con el censo"""
-        from utilidades import detectar_folios_duplicados, corregir_folios_duplicados
+        from src.core.utilidades import detectar_folios_duplicados, corregir_folios_duplicados
         
         # Detectar duplicados
         duplicados = detectar_folios_duplicados(self.personas)
@@ -584,132 +658,316 @@ class SistemaControlPagos:
             self.total_personas_label.config(text=str(len(self.personas)))
         
     def configurar_interfaz(self):
-        # Frame principal
-        main_frame = ttk.Frame(self.root, padding="10")
-        main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        print("[CONFIGURAR_INTERFAZ] Iniciando...")
+        # Frame principal con mejor espaciado
+        colores = self.obtener_colores()
+        tema_visual = TEMA_CLARO if self.tema_actual.get() == 'claro' else TEMA_OSCURO
         
-        # Configurar grid
+        print(f"[CONFIGURAR_INTERFAZ] Tema: {self.tema_actual.get()}")
+        self.root.configure(bg=tema_visual['bg_principal'])
+        
+        main_frame = tk.Frame(self.root, bg=tema_visual['bg_principal'])
+        main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), padx=0, pady=0)
+        print("[CONFIGURAR_INTERFAZ] main_frame creado y posicionado")
+        
+        # Configurar grid - IMPORTANTE: permitir que todo se expanda
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
         main_frame.columnconfigure(0, weight=1)
-        main_frame.rowconfigure(5, weight=1)  # Fila 5 es donde está la tabla
+        # main_frame tiene dos filas: 0 para barra, 1 para contenido
+        main_frame.rowconfigure(0, weight=0)  # Barra superior (altura fija)
+        main_frame.rowconfigure(1, weight=1)  # Contenedor principal (expandible)
         
         tamaños = self.obtener_tamaños()
-        colores = self.obtener_colores()
         
-        # ===== ENCABEZADO CON CONTROLES DE TEMA =====
-        header_frame = ttk.LabelFrame(main_frame, text="Informacion del Proyecto", padding="10")
-        header_frame.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
-        header_frame.columnconfigure(1, weight=1)
-        header_frame.columnconfigure(2, weight=1)
-        header_frame.columnconfigure(3, weight=1)
-        header_frame.columnconfigure(4, weight=1)
+        # ===== BARRA SUPERIOR MODERNA =====
+        print("[CONFIGURAR_INTERFAZ] Creando BarraSuperior...")
+        if not self.barra_superior:
+            from src.ui.ui_moderna import BarraSuperior
+            self.barra_superior = BarraSuperior(main_frame, self.usuario_actual, self.toggle_tema_desde_barra)
+            self.barra_superior.grid(row=0, column=0, sticky=(tk.W, tk.E))
+            print("[CONFIGURAR_INTERFAZ] BarraSuperior creada")
         
-        # Fila 0: Controles de accesibilidad
-        ttk.Label(header_frame, text="Tema:", font=('Arial', tamaños['normal'])).grid(row=0, column=5, sticky=tk.E, padx=5)
-        tema_combo = ttk.Combobox(header_frame, textvariable=self.tema_actual, state="readonly", width=10, values=['claro', 'oscuro'])
-        tema_combo.grid(row=0, column=6, padx=5, sticky=tk.W)
+        # ===== CONTENEDOR PRINCIPAL CON PADDING =====
+        print("[CONFIGURAR_INTERFAZ] Creando content_container...")
+        content_container = tk.Frame(main_frame, bg=tema_visual['bg_principal'])
+        content_container.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), 
+                              padx=ESPACIADO['lg'], pady=ESPACIADO['lg'])
+        content_container.columnconfigure(0, weight=1)
+        content_container.columnconfigure(1, weight=1)  # Segunda columna para diseño lado a lado
+        # Configurar todas las filas para que se expandan correctamente
+        content_container.rowconfigure(0, weight=0)  # Info panel
+        content_container.rowconfigure(1, weight=0)  # Search y Actions (lado a lado)
+        content_container.rowconfigure(2, weight=0)  # Total panel (oculto)
+        content_container.rowconfigure(3, weight=1)  # Tabla panel (expandible)
         
-        ttk.Label(header_frame, text="Tamaño Letra:", font=('Arial', tamaños['normal'])).grid(row=0, column=7, sticky=tk.E, padx=5)
-        tamaño_combo = ttk.Combobox(header_frame, textvariable=self.tamaño_actual, state="readonly", width=10, values=['pequeño', 'normal', 'grande'])
-        tamaño_combo.grid(row=0, column=8, padx=5, sticky=tk.W)
+        # ===== PANEL DE INFORMACIÓN (CARD MODERNO COLAPSABLE) =====
+        from src.ui.ui_moderna import PanelModerno
+        self.info_panel = PanelModerno(content_container, titulo="▼ 📊 Información del Proyecto", tema=tema_visual)
+        self.info_panel.grid(row=0, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, ESPACIADO['md']))
+        # Hacer el título clickeable para colapsar
+        self.info_panel.titulo_label.bind('<Button-1>', lambda e: self.toggle_panel(self.info_panel))
+        self.info_panel.titulo_label.config(cursor='hand2')
         
-        # Fila 1 del encabezado
-        ttk.Label(header_frame, text="Proyecto:", font=('Arial', tamaños['normal'], 'bold')).grid(row=1, column=0, sticky=tk.W, padx=5)
+        # ===== PANEL DE BÚSQUEDA (CARD MODERNO COLAPSABLE - IZQUIERDA) =====
+        self.search_panel = PanelModerno(content_container, titulo="▼ 🔍 Búsqueda y Filtros", tema=tema_visual)
+        self.search_panel.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, ESPACIADO['md']), padx=(0, ESPACIADO['sm']))
+        # Hacer el título clickeable para colapsar
+        self.search_panel.titulo_label.bind('<Button-1>', lambda e: self.toggle_panel(self.search_panel))
+        self.search_panel.titulo_label.config(cursor='hand2')
+        
+        # ===== PANEL DE ACCIONES (CARD MODERNO COLAPSABLE - DERECHA) =====
+        self.actions_panel = PanelModerno(content_container, titulo="▼ ⚡ Acciones Rápidas", tema=tema_visual)
+        self.actions_panel.grid(row=1, column=1, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, ESPACIADO['md']), padx=(ESPACIADO['sm'], 0))
+        # Hacer el título clickeable para colapsar
+        self.actions_panel.titulo_label.bind('<Button-1>', lambda e: self.toggle_panel(self.actions_panel))
+        self.actions_panel.titulo_label.config(cursor='hand2')
+        info_content = self.info_panel.content_frame
+        info_content.columnconfigure(1, weight=1)
+        info_content.columnconfigure(3, weight=1)
+        
+        # Fila 1: Proyecto y Fecha
+        tk.Label(info_content, text="Proyecto:", font=FUENTES['normal'],
+                bg=tema_visual.get('card_bg', tema_visual['bg_secundario']),
+                fg=tema_visual['fg_secundario']).grid(row=0, column=0, sticky=tk.W, padx=(0, ESPACIADO['sm']))
+        
         self.proyecto_var = tk.StringVar(value="Proyecto Comunitario 2026")
-        ttk.Entry(header_frame, textvariable=self.proyecto_var, width=40).grid(row=1, column=1, padx=5)
+        proyecto_entry = tk.Entry(info_content, textvariable=self.proyecto_var, font=FUENTES['normal'],
+                                  bg=tema_visual['input_bg'], fg=tema_visual['fg_principal'],
+                                  relief=tk.FLAT, bd=1, width=40)
+        proyecto_entry.grid(row=0, column=1, sticky=(tk.W, tk.E), padx=(0, ESPACIADO['lg']))
         
-        ttk.Label(header_frame, text="Fecha:", font=('Arial', tamaños['normal'], 'bold')).grid(row=1, column=2, sticky=tk.W, padx=5)
+        tk.Label(info_content, text="Fecha:", font=FUENTES['normal'],
+                bg=tema_visual.get('card_bg', tema_visual['bg_secundario']),
+                fg=tema_visual['fg_secundario']).grid(row=0, column=2, sticky=tk.W, padx=(0, ESPACIADO['sm']))
+        
         fecha_actual = datetime.now().strftime("%d/%m/%Y")
-        ttk.Label(header_frame, text=fecha_actual, font=('Arial', tamaños['normal'])).grid(row=1, column=3, padx=5)
+        tk.Label(info_content, text=fecha_actual, font=FUENTES['subtitulo'],
+                bg=tema_visual.get('card_bg', tema_visual['bg_secundario']),
+                fg=tema_visual['accent_primary']).grid(row=0, column=3, sticky=tk.W)
         
-        # Fila 2 del encabezado
-        ttk.Label(header_frame, text="Monto de Cooperacion:", font=('Arial', tamaños['normal'], 'bold')).grid(row=2, column=0, sticky=tk.W, padx=5, pady=5)
-        self.monto_var = tk.DoubleVar(value=self.monto_cooperacion)
-        monto_entry = ttk.Entry(header_frame, textvariable=self.monto_var, width=15)
-        monto_entry.grid(row=2, column=1, padx=5, pady=5, sticky=tk.W)
+        # Fila 2: Cooperación activa
+        tk.Label(info_content, text="Cooperación:", font=FUENTES['normal'],
+                bg=tema_visual.get('card_bg', tema_visual['bg_secundario']),
+                fg=tema_visual['fg_secundario']).grid(row=1, column=0, sticky=tk.W, 
+                                                     padx=(0, ESPACIADO['sm']), pady=(ESPACIADO['md'], 0))
         
-        ttk.Button(header_frame, text="Actualizar Monto", command=self.actualizar_monto, width=16).grid(row=2, column=2, padx=5)
+        coop_frame = tk.Frame(info_content, bg=tema_visual.get('card_bg', tema_visual['bg_secundario']))
+        coop_frame.grid(row=1, column=1, columnspan=3, sticky=(tk.W, tk.E), pady=(ESPACIADO['md'], 0))
         
-        ttk.Label(header_frame, text="Total Personas:", font=('Arial', tamaños['normal'], 'bold')).grid(row=2, column=3, sticky=tk.W, padx=5)
-        self.total_personas_label = ttk.Label(header_frame, text=str(len(self.personas)), font=('Arial', tamaños['normal']))
-        self.total_personas_label.grid(row=2, column=4, padx=5)
-
-        ttk.Label(header_frame, text="Cooperacion:", font=('Arial', tamaños['normal'], 'bold')).grid(row=3, column=0, sticky=tk.W, padx=5, pady=(5,0))
-        self.coop_selector = ttk.Combobox(header_frame, state="readonly", width=28)
-        self.coop_selector.grid(row=3, column=1, padx=5, pady=(5,0), sticky=(tk.W, tk.E))
+        self.coop_selector = ttk.Combobox(coop_frame, state="readonly", width=35, font=FUENTES['normal'])
+        self.coop_selector.pack(side=tk.LEFT, padx=(0, ESPACIADO['sm']))
         self.coop_selector.bind("<<ComboboxSelected>>", self.on_cambio_cooperacion)
-        ttk.Button(header_frame, text="Nueva Cooperacion", command=self.nueva_cooperacion, width=16).grid(row=3, column=2, padx=5, pady=(5,0))
-        ttk.Button(header_frame, text="Editar Cooperacion", command=self.editar_cooperacion, width=16).grid(row=3, column=3, padx=5, pady=(5,0))
         
-        # ===== BUSQUEDA =====
-        search_frame = ttk.Frame(main_frame)
-        search_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=(0, 5))
+        from src.ui.ui_moderna import BotonModerno
+        BotonModerno(coop_frame, f"{ICONOS['agregar']} Nueva", tema=tema_visual, tipo='success',
+                    command=self.nueva_cooperacion).pack(side=tk.LEFT, padx=(0, ESPACIADO['sm']))
+        BotonModerno(coop_frame, f"{ICONOS['editar']} Editar", tema=tema_visual, tipo='ghost',
+                    command=self.editar_cooperacion).pack(side=tk.LEFT)
         
-        ttk.Label(search_frame, text="Buscar:", font=('Arial', tamaños['normal'], 'bold')).pack(side=tk.LEFT, padx=5)
-        self.search_var = tk.StringVar()
-        self.search_var.trace('w', lambda *args: self.buscar_tiempo_real())
-        search_entry = ttk.Entry(search_frame, textvariable=self.search_var, width=40)
-        search_entry.pack(side=tk.LEFT, padx=5)
-        ttk.Button(search_frame, text="Limpiar", command=self.limpiar_busqueda, width=10).pack(side=tk.LEFT, padx=5)
-        ttk.Checkbutton(search_frame, text="Mostrar nombre", variable=self.nombre_visible,
-                command=self.actualizar_visibilidad_columnas).pack(side=tk.RIGHT, padx=5)
-        ttk.Checkbutton(search_frame, text="Mostrar folio", variable=self.folio_visible,
-                command=self.actualizar_visibilidad_columnas).pack(side=tk.RIGHT, padx=5)
+        # Fila 3: Monto y estadísticas
+        stats_frame = tk.Frame(info_content, bg=tema_visual.get('card_bg', tema_visual['bg_secundario']))
+        stats_frame.grid(row=2, column=0, columnspan=4, sticky=(tk.W, tk.E), pady=(ESPACIADO['lg'], 0))
         
-        # ===== BOTONES DE CONTROL =====
-        control_frame = ttk.Frame(main_frame)
-        control_frame.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
+        # Monto
+        monto_container = tk.Frame(stats_frame, bg=tema_visual.get('card_bg', tema_visual['bg_secundario']))
+        monto_container.pack(side=tk.LEFT, padx=(0, ESPACIADO['xl']))
         
-        ttk.Button(control_frame, text="Agregar Persona", command=self.agregar_persona, width=16).pack(side=tk.LEFT, padx=5)
-        ttk.Button(control_frame, text="🔍 Búsqueda Avanzada", command=self.abrir_busqueda_avanzada, width=18).pack(side=tk.LEFT, padx=5)
-        ttk.Button(control_frame, text="Editar Seleccionado", command=self.editar_persona, width=16).pack(side=tk.LEFT, padx=5)
-        ttk.Button(control_frame, text="Eliminar Seleccionado", command=self.eliminar_persona, width=16).pack(side=tk.LEFT, padx=5)
-        ttk.Button(control_frame, text="Registrar Pago", command=self.registrar_pago, width=16).pack(side=tk.LEFT, padx=5)
-        ttk.Button(control_frame, text="📜 Ver Historial", command=self.ver_historial_completo, width=15).pack(side=tk.LEFT, padx=5)
+        tk.Label(monto_container, text="Monto de Cooperación:", font=FUENTES['pequeño'],
+                bg=tema_visual.get('card_bg', tema_visual['bg_secundario']),
+                fg=tema_visual['fg_secundario']).pack(anchor=tk.W)
         
-        # Segunda fila de botones
-        control_frame2 = ttk.Frame(main_frame)
-        control_frame2.grid(row=3, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
+        monto_input_frame = tk.Frame(monto_container, bg=tema_visual.get('card_bg', tema_visual['bg_secundario']))
+        monto_input_frame.pack(anchor=tk.W, pady=(ESPACIADO['xs'], 0))
         
-        ttk.Button(control_frame2, text="Sincronizar con Censo", command=self.sincronizar_coop_con_censo, width=18).pack(side=tk.LEFT, padx=5)
-        ttk.Button(control_frame2, text="Corregir Folios Duplicados", command=self.corregir_folios, width=20).pack(side=tk.LEFT, padx=5)
-        ttk.Button(control_frame2, text="Exportar a Excel", command=self.exportar_excel, width=15).pack(side=tk.LEFT, padx=5)
-        ttk.Button(control_frame2, text="Crear Backup", command=self.crear_backup, width=15).pack(side=tk.LEFT, padx=5)
+        self.monto_var = tk.DoubleVar(value=self.monto_cooperacion)
+        tk.Label(monto_input_frame, text="$", font=FUENTES['subtitulo'],
+                bg=tema_visual.get('card_bg', tema_visual['bg_secundario']),
+                fg=tema_visual['accent_primary']).pack(side=tk.LEFT)
         
-        # Botón para mostrar/ocultar total
-        self.btn_toggle_total = ttk.Button(control_frame2, text="Mostrar Total Recaudado", command=self.toggle_total, width=20)
-        self.btn_toggle_total.pack(side=tk.RIGHT, padx=5)
+        monto_entry = tk.Entry(monto_input_frame, textvariable=self.monto_var, font=FUENTES['subtitulo'],
+                              bg=tema_visual['input_bg'], fg=tema_visual['fg_principal'],
+                              relief=tk.FLAT, bd=1, width=12)
+        monto_entry.pack(side=tk.LEFT, padx=(ESPACIADO['xs'], ESPACIADO['sm']))
+        
+        BotonModerno(monto_input_frame, "Actualizar", tema=tema_visual, tipo='primary',
+                    command=self.actualizar_monto).pack(side=tk.LEFT)
+        
+        # Total personas
+        personas_container = tk.Frame(stats_frame, bg=tema_visual.get('card_bg', tema_visual['bg_secundario']))
+        personas_container.pack(side=tk.LEFT, padx=(0, ESPACIADO['xl']))
+        
+        tk.Label(personas_container, text="Total Personas", font=FUENTES['pequeño'],
+                bg=tema_visual.get('card_bg', tema_visual['bg_secundario']),
+                fg=tema_visual['fg_secundario']).pack(anchor=tk.W)
+        
+        self.total_personas_label = tk.Label(personas_container, text=str(len(self.personas)), 
+                                            font=FUENTES_DISPLAY['hero'],
+                                            bg=tema_visual.get('card_bg', tema_visual['bg_secundario']),
+                                            fg=tema_visual['accent_primary'])
+        self.total_personas_label.pack(anchor=tk.W)
+        
+        # Total pagado
+        pagado_container = tk.Frame(stats_frame, bg=tema_visual.get('card_bg', tema_visual['bg_secundario']))
+        pagado_container.pack(side=tk.LEFT, padx=(0, ESPACIADO['xl']))
+        
+        tk.Label(pagado_container, text="Total Recaudado", font=FUENTES['pequeño'],
+                bg=tema_visual.get('card_bg', tema_visual['bg_secundario']),
+                fg=tema_visual['fg_secundario']).pack(anchor=tk.W)
+        
+        self.total_pagado_label = tk.Label(pagado_container, text="$0.00", 
+                                           font=FUENTES_DISPLAY['hero'],
+                                           bg=tema_visual.get('card_bg', tema_visual['bg_secundario']),
+                                           fg=colores['exito_fg'])
+        self.total_pagado_label.pack(anchor=tk.W)
+        
+        # Total pendiente
+        pendiente_container = tk.Frame(stats_frame, bg=tema_visual.get('card_bg', tema_visual['bg_secundario']))
+        pendiente_container.pack(side=tk.LEFT)
+        
+        tk.Label(pendiente_container, text="Total Pendiente", font=FUENTES['pequeño'],
+                bg=tema_visual.get('card_bg', tema_visual['bg_secundario']),
+                fg=tema_visual['fg_secundario']).pack(anchor=tk.W)
+        
+        self.total_pendiente_label = tk.Label(pendiente_container, text="$0.00", 
+                                             font=FUENTES_DISPLAY['hero'],
+                                             bg=tema_visual.get('card_bg', tema_visual['bg_secundario']),
+                                             fg=colores['error_fg'])
+        self.total_pendiente_label.pack(anchor=tk.W)
+        
+        # Personas que pagaron
+        personas_pagadas_container = tk.Frame(stats_frame, bg=tema_visual.get('card_bg', tema_visual['bg_secundario']))
+        personas_pagadas_container.pack(side=tk.LEFT, padx=(ESPACIADO['xl'], 0))
+        
+        tk.Label(personas_pagadas_container, text="Pagaron Completo", font=FUENTES['pequeño'],
+                bg=tema_visual.get('card_bg', tema_visual['bg_secundario']),
+                fg=tema_visual['fg_secundario']).pack(anchor=tk.W)
+        
+        self.personas_pagadas_label = tk.Label(personas_pagadas_container, text="0 de 0", 
+                                              font=FUENTES['subtitulo'],
+                                              bg=tema_visual.get('card_bg', tema_visual['bg_secundario']),
+                                              fg=tema_visual['accent_primary'])
+        self.personas_pagadas_label.pack(anchor=tk.W)
+        
+        # Botón para ocultar/mostrar cifras
+        ocultar_container = tk.Frame(stats_frame, bg=tema_visual.get('card_bg', tema_visual['bg_secundario']))
+        ocultar_container.pack(side=tk.RIGHT, padx=(ESPACIADO['xl'], 0))
+        
+        self.btn_toggle_cifras = BotonModerno(ocultar_container, f"👁️ Ocultar cifras", 
+                                              tema=tema_visual, tipo='ghost',
+                                              command=self.toggle_cifras_visibles)
+        self.btn_toggle_cifras.pack()
+        
+        search_content = self.search_panel.content_frame
+        
+        # Campo de búsqueda mejorado
+        search_input_frame = tk.Frame(search_content, bg=tema_visual.get('card_bg', tema_visual['bg_secundario']))
+        search_input_frame.pack(fill=tk.X, pady=(0, ESPACIADO['md']))
+        
+        from src.ui.ui_componentes_extra import SearchBox
+        self.search_box = SearchBox(search_input_frame, placeholder="Buscar por nombre, folio o estado...",
+                              tema=tema_visual, callback=lambda _: self.buscar_tiempo_real())
+        self.search_box.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, ESPACIADO['md']))
+        
+        # Vincular eventos de búsqueda
+        self.search_box.entry.bind('<KeyRelease>', lambda e: self.buscar_tiempo_real())
+        
+        BotonModerno(search_input_frame, f"{ICONOS['cerrar']} Limpiar", tema=tema_visual, tipo='secondary',
+                    command=self.limpiar_busqueda).pack(side=tk.LEFT, padx=(0, ESPACIADO['sm']))
+        BotonModerno(search_input_frame, f"{ICONOS['filtrar']} Búsqueda Avanzada", tema=tema_visual, tipo='ghost',
+                    command=self.abrir_busqueda_avanzada).pack(side=tk.LEFT)
+        
+        # Checkboxes de visibilidad
+        visibility_frame = tk.Frame(search_content, bg=tema_visual.get('card_bg', tema_visual['bg_secundario']))
+        visibility_frame.pack(anchor=tk.W)
+        
+        ttk.Checkbutton(visibility_frame, text="Mostrar folio", variable=self.folio_visible,
+                       command=self.actualizar_visibilidad_columnas).pack(side=tk.LEFT, padx=(0, ESPACIADO['lg']))
+        ttk.Checkbutton(visibility_frame, text="Mostrar nombre", variable=self.nombre_visible,
+                       command=self.actualizar_visibilidad_columnas).pack(side=tk.LEFT)
+        
+        actions_content = self.actions_panel.content_frame
+        
+        # Fila 1 de botones
+        btn_row1 = tk.Frame(actions_content, bg=tema_visual.get('card_bg', tema_visual['bg_secundario']))
+        btn_row1.pack(fill=tk.X, pady=(0, ESPACIADO['sm']))
+        
+        BotonModerno(btn_row1, f"{ICONOS['agregar']} Agregar Persona", tema=tema_visual, tipo='success',
+                    command=self.agregar_persona).pack(side=tk.LEFT, padx=(0, ESPACIADO['sm']))
+        BotonModerno(btn_row1, f"{ICONOS['editar']} Editar", tema=tema_visual, tipo='ghost',
+                    command=self.editar_persona).pack(side=tk.LEFT, padx=(0, ESPACIADO['sm']))
+        BotonModerno(btn_row1, f"{ICONOS['eliminar']} Eliminar", tema=tema_visual, tipo='error',
+                    command=self.eliminar_persona).pack(side=tk.LEFT, padx=(0, ESPACIADO['sm']))
+        BotonModerno(btn_row1, f"{ICONOS['dinero']} Registrar Pago", tema=tema_visual, tipo='primary',
+                    command=self.registrar_pago).pack(side=tk.LEFT, padx=(0, ESPACIADO['sm']))
+        BotonModerno(btn_row1, f"{ICONOS['reporte']} Ver Historial", tema=tema_visual, tipo='ghost',
+                    command=self.ver_historial_completo).pack(side=tk.LEFT)
+        
+        # Fila 2 de botones
+        btn_row2 = tk.Frame(actions_content, bg=tema_visual.get('card_bg', tema_visual['bg_secundario']))
+        btn_row2.pack(fill=tk.X)
+        
+        BotonModerno(btn_row2, f"{ICONOS['sincronizar']} Sincronizar con Censo", tema=tema_visual, tipo='ghost',
+                    command=self.sincronizar_coop_con_censo).pack(side=tk.LEFT, padx=(0, ESPACIADO['sm']))
+        BotonModerno(btn_row2, f"{ICONOS['herramientas']} Corregir Folios", tema=tema_visual, tipo='warning',
+                    command=self.corregir_folios).pack(side=tk.LEFT, padx=(0, ESPACIADO['sm']))
+        BotonModerno(btn_row2, f"{ICONOS['exportar']} Exportar Excel", tema=tema_visual, tipo='ghost',
+                    command=self.exportar_excel).pack(side=tk.LEFT, padx=(0, ESPACIADO['sm']))
+        BotonModerno(btn_row2, f"{ICONOS['guardar']} Crear Backup", tema=tema_visual, tipo='ghost',
+                    command=self.crear_backup).pack(side=tk.LEFT, padx=(0, ESPACIADO['sm']))
+        
+        # Botón toggle total
+        self.btn_toggle_total = BotonModerno(btn_row2, f"{ICONOS['estadisticas']} Mostrar Resumen", 
+                                            tema=tema_visual, tipo='ghost',
+                                            command=self.toggle_total)
+        self.btn_toggle_total.pack(side=tk.RIGHT)
         
         # ===== PANEL DE TOTAL (OCULTO INICIALMENTE) =====
-        self.total_frame = ttk.LabelFrame(main_frame, text="Resumen Financiero", padding="10")
-        self.total_frame.grid(row=4, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
+        self.total_frame = PanelModerno(content_container, titulo="💰 Resumen Financiero", tema=tema_visual)
+        self.total_frame.grid(row=2, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, ESPACIADO['md']))
         self.total_frame.grid_remove()  # Ocultar inicialmente
         
-        self.total_pagado_label = ttk.Label(self.total_frame, text="Total Recaudado: $0.00", 
-                                           font=('Arial', tamaños['titulo'], 'bold'), foreground=colores['exito_fg'])
-        self.total_pagado_label.pack(side=tk.LEFT, padx=20)
+        total_content = self.total_frame.content_frame
         
-        self.total_pendiente_label = ttk.Label(self.total_frame, text="Total Pendiente: $0.00", 
-                                              font=('Arial', 14, 'bold'), foreground='red')
-        self.total_pendiente_label.pack(side=tk.LEFT, padx=20)
+        # Cards de estadísticas
+        from src.ui.ui_componentes_extra import CardEstadistica
+        stats_container = tk.Frame(total_content, bg=tema_visual.get('card_bg', tema_visual['bg_secundario']))
+        stats_container.pack(fill=tk.X)
         
-        self.personas_pagadas_label = ttk.Label(self.total_frame, text="Personas que pagaron: 0", 
-                                               font=('Arial', 12))
-        self.personas_pagadas_label.pack(side=tk.LEFT, padx=20)
+        self.card_recaudado = CardEstadistica(stats_container, "Total Recaudado", "$0.00",
+                                             icono=ICONOS['dinero'], color='success', tema=tema_visual)
+        self.card_recaudado.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, ESPACIADO['md']))
         
-        # ===== TABLA =====
-        table_frame = ttk.Frame(main_frame)
-        table_frame.grid(row=5, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
-        table_frame.columnconfigure(0, weight=1)
-        table_frame.rowconfigure(0, weight=1)
+        self.card_pendiente = CardEstadistica(stats_container, "Total Pendiente", "$0.00",
+                                             icono=ICONOS['alerta'], color='warning', tema=tema_visual)
+        self.card_pendiente.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, ESPACIADO['md']))
+        
+        self.card_personas = CardEstadistica(stats_container, "Personas que Pagaron", "0",
+                                            icono=ICONOS['usuarios'], color='info', tema=tema_visual)
+        self.card_personas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        # ===== TABLA MODERNA =====
+        self.table_panel = PanelModerno(content_container, titulo="📋 Lista de Personas", tema=tema_visual)
+        self.table_panel.grid(row=3, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S))
+        
+        # Agregar botón de pantalla completa en el título
+        titulo_frame = self.table_panel.card.winfo_children()[0]  # El header_frame
+        btn_fullscreen = tk.Button(titulo_frame, text="⛶", font=('Arial', 14), 
+                                   bg=tema_visual.get('card_bg', tema_visual['bg_secundario']),
+                                   fg=tema_visual['accent_primary'], relief=tk.FLAT,
+                                   cursor='hand2', command=self.toggle_fullscreen_tabla)
+        btn_fullscreen.pack(side=tk.RIGHT, padx=ESPACIADO['md'])
+        
+        table_content = self.table_panel.content_frame
+        table_content.columnconfigure(0, weight=1)
+        table_content.rowconfigure(0, weight=1)
         
         # Scrollbars
-        scrollbar_y = ttk.Scrollbar(table_frame, orient=tk.VERTICAL)
-        scrollbar_x = ttk.Scrollbar(table_frame, orient=tk.HORIZONTAL)
+        scrollbar_y = ttk.Scrollbar(table_content, orient=tk.VERTICAL)
+        scrollbar_x = ttk.Scrollbar(table_content, orient=tk.HORIZONTAL)
         
-        # Treeview (tabla)
-        self.tree = ttk.Treeview(table_frame, 
+        # Treeview (tabla) con mejor estilo
+        self.tree = ttk.Treeview(table_content, 
                                  columns=('folio', 'nombre', 'monto_esperado', 'pagado', 'pendiente', 'estado', 'ultimo_pago', 'notas'),
                                  show='headings',
                                  yscrollcommand=scrollbar_y.set,
@@ -742,18 +1000,28 @@ class SistemaControlPagos:
         scrollbar_y.config(command=self.tree.yview)
         scrollbar_x.config(command=self.tree.xview)
         
-        # Menú contextual sobre filas
+        # Configurar tags de colores para estados
+        colores = self.obtener_colores()
         tema_visual = TEMA_CLARO if self.tema_actual.get() == 'claro' else TEMA_OSCURO
+        self.tree.tag_configure('fila_par', background=tema_visual['table_row_even'], foreground=tema_visual['fg_principal'])
+        self.tree.tag_configure('fila_impar', background=tema_visual['table_row_odd'], foreground=tema_visual['fg_principal'])
+        self.tree.tag_configure('pagado', foreground=colores['exito_fg'])
+        self.tree.tag_configure('pendiente', foreground=colores['error_fg'])
+        self.tree.tag_configure('parcial', foreground=colores['alerta_fg'])
+        
+        # Menú contextual sobre filas con mejor estilo
         self.menu_persona = tk.Menu(self.root, tearoff=0,
-                        bg=tema_visual['bg_secundario'],
+                        bg=tema_visual.get('card_bg', tema_visual['bg_secundario']),
                         fg=tema_visual['fg_principal'],
-                        activebackground=tema_visual['accent_secondary'],
-                        activeforeground=tema_visual['fg_principal'])
+                        activebackground=tema_visual['accent_primary'],
+                        activeforeground='#ffffff',
+                        font=FUENTES['normal'],
+                        borderwidth=1, relief=tk.FLAT)
         self.menu_persona.add_command(label=f"{ICONOS['editar']} Editar persona", command=self.editar_persona)
-        self.menu_persona.add_command(label=f"{ICONOS['guardar']} Registrar pago", command=self.registrar_pago)
+        self.menu_persona.add_command(label=f"{ICONOS['dinero']} Registrar pago", command=self.registrar_pago)
         self.menu_persona.add_command(label=f"{ICONOS['eliminar']} Eliminar", command=self.eliminar_persona)
         self.menu_persona.add_separator()
-        self.menu_persona.add_command(label=f"{ICONOS['buscar']} Ver historial", command=self.ver_historial_completo)
+        self.menu_persona.add_command(label=f"{ICONOS['reporte']} Ver historial", command=self.ver_historial_completo)
         self.tree.bind('<Button-3>', self._mostrar_menu_persona)
         
         self.actualizar_visibilidad_columnas()
@@ -783,6 +1051,62 @@ class SistemaControlPagos:
         else:
             self.tree.column('nombre', width=0, minwidth=0, stretch=False)
             self.tree.heading('nombre', text='')
+    
+    def toggle_panel(self, panel):
+        """Colapsa o expande un panel al hacer clic en su título"""
+        # Como content_frame usa pack(), necesitamos usar pack_forget() y pack()
+        if panel.content_frame.winfo_ismapped():
+            panel.content_frame.pack_forget()
+            # Cambiar el icono del título para indicar que está colapsado
+            titulo_actual = panel.titulo_label.cget('text')
+            nuevo_titulo = titulo_actual.replace('▼', '▶')
+            panel.titulo_label.config(text=nuevo_titulo)
+        else:
+            panel.content_frame.pack(fill=tk.BOTH, expand=True, padx=ESPACIADO['lg'], pady=ESPACIADO['lg'])
+            # Cambiar el icono del título para indicar que está expandido
+            titulo_actual = panel.titulo_label.cget('text')
+            nuevo_titulo = titulo_actual.replace('▶', '▼')
+            panel.titulo_label.config(text=nuevo_titulo)
+    
+    def toggle_cifras_visibles(self):
+        """Alterna entre mostrar y ocultar cifras sensibles"""
+        self.cifras_visibles = not self.cifras_visibles
+        
+        # Actualizar texto del botón
+        if hasattr(self, 'btn_toggle_cifras'):
+            if self.cifras_visibles:
+                self.btn_toggle_cifras.config(text="👁️ Ocultar cifras")
+            else:
+                self.btn_toggle_cifras.config(text="🙈 Mostrar cifras")
+        
+        # Actualizar totales para reflejar el cambio
+        self.actualizar_totales()
+    
+    def toggle_fullscreen_tabla(self):
+        """Alterna entre pantalla completa de la tabla y vista normal"""
+        if not hasattr(self, 'tabla_fullscreen'):
+            self.tabla_fullscreen = False
+        
+        self.tabla_fullscreen = not self.tabla_fullscreen
+        
+        if self.tabla_fullscreen:
+            # Ocultar otros paneles
+            if hasattr(self, 'info_panel') and self.info_panel.winfo_ismapped():
+                self.info_panel.grid_remove()
+            if hasattr(self, 'search_panel') and self.search_panel.winfo_ismapped():
+                self.search_panel.grid_remove()
+            if hasattr(self, 'actions_panel') and self.actions_panel.winfo_ismapped():
+                self.actions_panel.grid_remove()
+            if hasattr(self, 'total_frame') and self.total_frame.winfo_ismapped():
+                self.total_frame.grid_remove()
+        else:
+            # Mostrar paneles nuevamente
+            if hasattr(self, 'info_panel'):
+                self.info_panel.grid()
+            if hasattr(self, 'search_panel'):
+                self.search_panel.grid()
+            if hasattr(self, 'actions_panel'):
+                self.actions_panel.grid()
         
     def sincronizar_con_censo(self, nombre):
         """Sincronizar persona con la base de datos de censo - buscar folio permanente"""
@@ -1359,15 +1683,21 @@ class SistemaControlPagos:
         
         ttk.Button(dialog, text="Cerrar", command=dialog.destroy).pack(pady=10)
     
+    def toggle_tema_desde_barra(self):
+        """Cambiar tema desde la barra superior"""
+        nuevo_tema = 'oscuro' if self.tema_actual.get() == 'claro' else 'claro'
+        self.tema_actual.set(nuevo_tema)
+        # El trace de tema_actual llamará a aplicar_tema
+    
     def toggle_total(self):
         self.mostrar_total = not self.mostrar_total
         
         if self.mostrar_total:
             self.total_frame.grid()
-            self.btn_toggle_total.config(text="Ocultar Total Recaudado")
+            self.btn_toggle_total.config(text=f"{ICONOS['contraer']} Ocultar Resumen")
         else:
             self.total_frame.grid_remove()
-            self.btn_toggle_total.config(text="Mostrar Total Recaudado")
+            self.btn_toggle_total.config(text=f"{ICONOS['estadisticas']} Mostrar Resumen")
         
         self.actualizar_totales()
     
@@ -1377,7 +1707,8 @@ class SistemaControlPagos:
     
     def limpiar_busqueda(self):
         """Limpiar busqueda"""
-        self.search_var.set('')
+        if hasattr(self, 'search_box'):
+            self.search_box.clear()
         self.actualizar_tabla()
     
     def actualizar_tabla(self):
@@ -1388,7 +1719,7 @@ class SistemaControlPagos:
         
         # Filtrar personas si hay búsqueda activa
         personas_mostrar = self.personas
-        criterio = self.search_var.get().strip().lower()
+        criterio = self.search_box.get().strip().lower() if hasattr(self, 'search_box') else ''
         
         if criterio:
             personas_mostrar = [p for p in self.personas 
@@ -1409,16 +1740,19 @@ class SistemaControlPagos:
             total_pagado = sum(pago['monto'] for pago in persona['pagos'])
             pendiente = max(0, monto_esperado - total_pagado)
             
-            # Determinar estado
+            # Determinar estado y símbolo indicador
             if total_pagado >= monto_esperado:
                 estado = 'Pagado'
                 tag = 'pagado'
+                indicador = '● '  # Círculo lleno para pagado
             elif total_pagado > 0:
                 estado = 'Parcial'
                 tag = 'parcial'
+                indicador = '◐ '  # Semicírculo para parcial
             else:
                 estado = 'Pendiente'
                 tag = 'pendiente'
+                indicador = '○ '  # Círculo vacío para pendiente
             
             # Obtener fecha del último pago
             ultimo_pago = ''
@@ -1427,16 +1761,18 @@ class SistemaControlPagos:
                 ultimo_pago = f"{ultimo['fecha']} {ultimo['hora']}"
             
             iid = self._persona_iid(persona)
+            # El orden de los tags importa: los últimos tienen prioridad
+            row_tag = 'fila_par' if idx % 2 == 0 else 'fila_impar'
             self.tree.insert('', tk.END, iid=iid,
                            values=(persona.get('folio', 'SIN-FOLIO'),
-                                  persona['nombre'],
+                                  indicador + persona['nombre'],  # Agregar indicador al nombre
                                   f"${monto_esperado:.2f}",
                                   f"${total_pagado:.2f}",
                                   f"${pendiente:.2f}",
                                   estado,
                                   ultimo_pago,
                                   persona.get('notas', '')),
-                           tags=(tag, 'fila_par' if idx % 2 == 0 else 'fila_impar'))
+                           tags=(row_tag,))  # Solo tag de fila, sin tag de color
             self.tree_persona_map[iid] = persona
         
         # Actualizar contador de personas
@@ -1466,17 +1802,58 @@ class SistemaControlPagos:
         for persona in self.personas:
             monto_esperado = persona.get('monto_esperado', persona.get('monto', 100))
             pagado = sum(pago['monto'] for pago in persona.get('pagos', []))
+            pendiente = max(0, monto_esperado - pagado)
             
             total_pagado += pagado
-            pendiente = max(0, monto_esperado - pagado)
             total_pendiente += pendiente
             
+            # Contar personas que completaron pago
             if pagado >= monto_esperado:
                 personas_pagadas += 1
         
-        self.total_pagado_label.config(text=f"Total Recaudado: ${total_pagado:.2f}")
-        self.total_pendiente_label.config(text=f"Total Pendiente: ${total_pendiente:.2f}")
-        self.personas_pagadas_label.config(text=f"Personas que pagaron completo: {personas_pagadas} de {len(self.personas)}")
+        # Actualizar labels principales en panel de información
+        if hasattr(self, 'total_pagado_label'):
+            if self.cifras_visibles:
+                self.total_pagado_label.config(text=f"${total_pagado:.2f}")
+            else:
+                self.total_pagado_label.config(text="••••••")
+        
+        if hasattr(self, 'total_pendiente_label'):
+            if self.cifras_visibles:
+                self.total_pendiente_label.config(text=f"${total_pendiente:.2f}")
+            else:
+                self.total_pendiente_label.config(text="••••••")
+        
+        if hasattr(self, 'personas_pagadas_label'):
+            self.personas_pagadas_label.config(text=f"{personas_pagadas} de {len(self.personas)}")
+        
+        # Actualizar cards de estadísticas si existen
+        if hasattr(self, 'card_recaudado') and self.card_recaudado:
+            try:
+                if hasattr(self.card_recaudado, 'update_value'):
+                    if self.cifras_visibles:
+                        self.card_recaudado.update_value(f"${total_pagado:.2f}")
+                    else:
+                        self.card_recaudado.update_value("••••••")
+            except:
+                pass
+        
+        if hasattr(self, 'card_pendiente') and self.card_pendiente:
+            try:
+                if hasattr(self.card_pendiente, 'update_value'):
+                    if self.cifras_visibles:
+                        self.card_pendiente.update_value(f"${total_pendiente:.2f}")
+                    else:
+                        self.card_pendiente.update_value("••••••")
+            except:
+                pass
+        
+        if hasattr(self, 'card_personas') and self.card_personas:
+            try:
+                if hasattr(self.card_personas, 'update_value'):
+                    self.card_personas.update_value(f"{personas_pagadas} de {len(self.personas)}")
+            except:
+                pass
 
     def _persona_iid(self, persona):
         """Devuelve un iid estable para el Treeview basado en el objeto persona"""
@@ -1601,20 +1978,13 @@ class SistemaControlPagos:
             registrar_error('CREAR_BACKUP', str(e))
             messagebox.showerror("Error", f"Error al crear backup: {str(e)}")
     
-    def set_usuario(self, usuario, gestor_auth):
-        """Configurar usuario autenticado"""
-        self.usuario_actual = usuario
-        self.gestor_auth = gestor_auth
-        registrar_operacion('LOGIN', 'Usuario inició sesión', 
-            {'usuario': usuario['nombre'], 'rol': usuario['rol']}, usuario['nombre'])
-    
     def abrir_busqueda_avanzada(self):
         """Abrir ventana de búsqueda avanzada"""
         if not self.personas:
             messagebox.showinfo("Información", "No hay personas para buscar")
             return
         
-        from ventana_busqueda import VentanaBusquedaAvanzada
+        from src.ui.ventana_busqueda import VentanaBusquedaAvanzada
         VentanaBusquedaAvanzada(self.root, self.personas, self.seleccionar_persona_busqueda)
     
     def seleccionar_persona_busqueda(self, persona):
@@ -1627,7 +1997,7 @@ class SistemaControlPagos:
     
     def ver_historial_completo(self):
         """Abrir ventana de historial completo"""
-        from ventana_historial import VentanaHistorial
+        from src.modules.historial.ventana_historial import VentanaHistorial
         VentanaHistorial(self.root)
     
     def cerrar_aplicacion(self):
@@ -1664,17 +2034,19 @@ class SistemaControlPagos:
 
 def main():
     """Punto de entrada principal con autenticación"""
-    # Crear ventana principal (oculta inicialmente)
-    root = tk.Tk()
-    root.withdraw()
+    from src.auth.login_window import VentanaLogin
     
     # Crear ventana de login
-    from login_window import VentanaLogin
+    login_root = tk.Tk()
     
     def on_login_exitoso(usuario, gestor_auth):
         """Callback cuando el login es exitoso"""
-        # Mostrar ventana principal
-        root.deiconify()
+        # Cerrar ventana de login
+        login_root.destroy()
+        
+        # Crear ventana principal
+        root = tk.Tk()
+        root.title(f"Sistema de Control de Pagos - {usuario['nombre']} ({usuario['rol']})")
         
         # Crear aplicación
         app = SistemaControlPagos(root)
@@ -1684,11 +2056,9 @@ def main():
         if hasattr(app, '_proyecto_guardado'):
             app.proyecto_var.set(app._proyecto_guardado)
         
-        # Actualizar título con usuario
-        root.title(f"Sistema de Control de Pagos - {usuario['nombre']} ({usuario['rol']})")
+        # Iniciar mainloop de la ventana principal
+        root.mainloop()
     
-    # Crear ventana de login
-    login_root = tk.Tk()
     VentanaLogin(login_root, on_login_exitoso)
     login_root.mainloop()
 

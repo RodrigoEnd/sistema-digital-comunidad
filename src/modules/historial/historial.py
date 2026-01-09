@@ -7,8 +7,8 @@ import json
 import os
 from datetime import datetime
 from pathlib import Path
-from config import RUTA_SEGURA
-from logger import registrar_operacion, registrar_error
+from src.config import RUTA_SEGURA
+from src.core.logger import registrar_operacion, registrar_error
 
 class GestorHistorial:
     """Gestor de historial de cambios y auditoria"""

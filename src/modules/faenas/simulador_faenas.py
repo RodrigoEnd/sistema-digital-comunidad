@@ -2,16 +2,19 @@ import os
 import random
 from uuid import uuid4
 from datetime import datetime, date
+import sys
 
-# Asegurar imports relativos desde src
+# Configurar path para imports cuando se ejecuta directamente
 if __name__ == "__main__":
-    import sys
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    # Agregar la raíz del proyecto al path
+    proyecto_raiz = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+    if proyecto_raiz not in sys.path:
+        sys.path.insert(0, proyecto_raiz)
 
-from seguridad import seguridad
-from config import ARCHIVO_FAENAS, PASSWORD_CIFRADO
+from src.auth.seguridad import seguridad
+from src.config import ARCHIVO_FAENAS, PASSWORD_CIFRADO
 try:
-    from base_datos import db
+    from src.core.base_datos import db
 except Exception:
     db = None
 

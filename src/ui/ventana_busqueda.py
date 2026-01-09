@@ -3,7 +3,7 @@ Ventana de búsqueda avanzada con filtros
 """
 import tkinter as tk
 from tkinter import ttk, messagebox
-from buscador import BuscadorAvanzado
+from src.ui.buscador import BuscadorAvanzado
 
 class VentanaBusquedaAvanzada:
     """Ventana para búsqueda avanzada con múltiples filtros"""

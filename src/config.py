@@ -24,6 +24,14 @@ ARCHIVO_PAGOS = "datos_pagos.json"
 ARCHIVO_FAENAS = "datos_faenas.json"
 ARCHIVO_CONFIG = "config_usuario.json"
 
+# Sistema de archivos
+def obtener_ruta_segura():
+    """Obtiene la ruta segura en AppData del usuario"""
+    appdata = os.getenv('LOCALAPPDATA')
+    return os.path.join(appdata, 'SistemaComunidad')
+
+RUTA_SEGURA = obtener_ruta_segura()
+
 # Interfaz
 VENTANA_MODO = 'zoomed'  # 'zoomed' para pantalla completa en Windows
 
@@ -75,6 +83,8 @@ def obtener_ruta_segura():
     """Obtiene la ruta segura en AppData del usuario"""
     appdata = os.getenv('LOCALAPPDATA')
     return os.path.join(appdata, 'SistemaComunidad')
+
+RUTA_SEGURA = obtener_ruta_segura()
 
 RUTA_SEGURA = obtener_ruta_segura()
 

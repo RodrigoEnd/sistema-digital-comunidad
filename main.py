@@ -10,8 +10,8 @@ import os
 import tkinter as tk
 from tkinter import messagebox
 
-# Agregar la carpeta src al path para poder importar los módulos
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src'))
+# Configurar rutas de importación
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import requests
 from src.config import MODO_OFFLINE
@@ -28,7 +28,7 @@ def iniciar_api():
     """Iniciar el servidor API en segundo plano"""
     try:
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        api_path = os.path.join(script_dir, "src", "api_local.py")
+        api_path = os.path.join(script_dir, "src", "api", "api_local.py")
         
         # Iniciar API en segundo plano
         proceso = subprocess.Popen(
@@ -56,7 +56,7 @@ def iniciar_censo():
     """Iniciar el sistema de censo de habitantes"""
     try:
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        censo_path = os.path.join(script_dir, "src", "censo_habitantes.py")
+        censo_path = os.path.join(script_dir, "src", "modules", "censo", "censo_habitantes.py")
         
         print("\n" + "="*60)
         print("SISTEMA DE GESTION COMUNITARIA")
@@ -64,8 +64,8 @@ def iniciar_censo():
         print("Iniciando Sistema de Censo de Habitantes...")
         print("="*60 + "\n")
         
-        # Cambiar al directorio src para que los imports funcionen
-        os.chdir(os.path.join(script_dir, "src"))
+        # Cambiar al directorio raíz para que los imports funcionen correctamente
+        os.chdir(script_dir)
         
         # Ejecutar censo (bloquea hasta que se cierre)
         subprocess.run([sys.executable, censo_path])
@@ -97,7 +97,7 @@ def main():
                 input("Presiona Enter para salir...")
                 return
         else:
-            print("\n✓ API activa")
+            print("\n[OK] API activa")
     else:
         print("\nModo offline: API no requerida")
     
@@ -107,8 +107,8 @@ def main():
         # Iniciar censo
         try:
             script_dir = os.path.dirname(os.path.abspath(__file__))
-            censo_path = os.path.join(script_dir, "src", "censo_habitantes.py")
-            os.chdir(os.path.join(script_dir, "src"))
+            censo_path = os.path.join(script_dir, "src", "modules", "censo", "censo_habitantes.py")
+            os.chdir(script_dir)
             subprocess.run([sys.executable, censo_path])
         except Exception as e:
             print(f"Error al iniciar censo: {e}")
@@ -118,10 +118,10 @@ def main():
         # Iniciar control de pagos con autenticación
         try:
             script_dir = os.path.dirname(os.path.abspath(__file__))
-            os.chdir(os.path.join(script_dir, "src"))
+            os.chdir(script_dir)
             
             # Importar e iniciar control de pagos con login
-            from src.control_pagos import main as control_main
+            from src.modules.pagos.control_pagos import main as control_main
             control_main()
             
         except Exception as e:
@@ -134,8 +134,8 @@ def main():
         # Iniciar registro de faenas con autenticación
         try:
             script_dir = os.path.dirname(os.path.abspath(__file__))
-            os.chdir(os.path.join(script_dir, "src"))
-            from src.control_faenas import main as faenas_main
+            os.chdir(script_dir)
+            from src.modules.faenas.control_faenas import main as faenas_main
             faenas_main()
         except Exception as e:
             print(f"Error al iniciar registro de faenas: {e}")
@@ -151,10 +151,10 @@ def main():
         # Generar datos simulados de faenas 2025
         try:
             script_dir = os.path.dirname(os.path.abspath(__file__))
-            os.chdir(os.path.join(script_dir, "src"))
-            from src.simulador_faenas import generar_simulacion_2025
+            os.chdir(script_dir)
+            from src.modules.faenas.simulador_faenas import generar_simulacion_2025
             generar_simulacion_2025()
-            print("\n✓ Simulación creada. Ahora abre 'Registro de Faenas' para ver el resumen anual.")
+            print("\n[OK] Simulacion creada. Ahora abre 'Registro de Faenas' para ver el resumen anual.")
         except Exception as e:
             print(f"Error al generar simulación: {e}")
             import traceback

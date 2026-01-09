@@ -8,9 +8,9 @@ import shutil
 import json
 from datetime import datetime
 from pathlib import Path
-from config import CARPETA_BACKUPS, RUTA_SEGURA, ARCHIVO_HABITANTES, ARCHIVO_PAGOS
-from seguridad import seguridad
-from logger import registrar_backup, registrar_error
+from src.config import CARPETA_BACKUPS, RUTA_SEGURA, ARCHIVO_HABITANTES, ARCHIVO_PAGOS
+from src.auth.seguridad import seguridad
+from src.core.logger import registrar_backup, registrar_error
 
 # Crear carpeta de backups si no existe
 if not os.path.exists(CARPETA_BACKUPS):

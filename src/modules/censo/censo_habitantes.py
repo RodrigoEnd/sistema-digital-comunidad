@@ -6,11 +6,19 @@ import sys
 import time
 import os
 from datetime import datetime
-from config import API_URL, TEMAS
-from tema_moderno import TEMA_CLARO, TEMA_OSCURO, FUENTES
-from logger import registrar_operacion, registrar_error
-from validadores import validar_nombre
-from indicadores_estado import calcular_estado_habitante
+
+# Configurar path para imports cuando se ejecuta directamente
+if __name__ == "__main__":
+    # Agregar la raíz del proyecto al path
+    proyecto_raiz = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+    if proyecto_raiz not in sys.path:
+        sys.path.insert(0, proyecto_raiz)
+
+from src.config import API_URL, TEMAS
+from src.ui.tema_moderno import TEMA_CLARO, TEMA_OSCURO, FUENTES
+from src.core.logger import registrar_operacion, registrar_error
+from src.core.validadores import validar_nombre
+from src.modules.indicadores.indicadores_estado import calcular_estado_habitante
 
 class SistemaCensoHabitantes:
     def __init__(self, root):
@@ -414,7 +422,9 @@ class SistemaCensoHabitantes:
         """Lanza la app de control de pagos"""
         try:
             script_dir = os.path.dirname(os.path.abspath(__file__))
-            pagos_path = os.path.join(script_dir, "control_pagos.py")
+            # Navegar a la carpeta de pagos (subir un nivel y entrar a pagos)
+            pagos_path = os.path.join(script_dir, "..", "pagos", "control_pagos.py")
+            pagos_path = os.path.abspath(pagos_path)  # Resolver la ruta absoluta
             
             if not os.path.exists(pagos_path):
                 messagebox.showerror("Error", f"No se encontró el archivo:\n{pagos_path}")
@@ -429,7 +439,9 @@ class SistemaCensoHabitantes:
         """Lanza la app de registro de faenas"""
         try:
             script_dir = os.path.dirname(os.path.abspath(__file__))
-            faenas_path = os.path.join(script_dir, "control_faenas.py")
+            # Navegar a la carpeta de faenas (subir un nivel y entrar a faenas)
+            faenas_path = os.path.join(script_dir, "..", "faenas", "control_faenas.py")
+            faenas_path = os.path.abspath(faenas_path)  # Resolver la ruta absoluta
 
             if not os.path.exists(faenas_path):
                 messagebox.showerror("Error", f"No se encontró el archivo:\n{faenas_path}")
