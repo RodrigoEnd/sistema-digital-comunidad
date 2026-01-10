@@ -1,101 +1,72 @@
-# Sistema de Control de Pagos - Proyectos Comunitarios
+# Sistema Digital de Gestión Comunitaria
 
 ## Descripción
-Sistema interactivo seguro para el control de pagos y cooperaciones de proyectos del pueblo con cifrado de datos y ubicación protegida.
+Sistema integral para la gestión comunitaria incluyendo censo de habitantes, control de pagos y registro de faenas con seguridad, auditoría y cifrado de datos.
 
-## Características de Seguridad
-- Cifrado AES-256 de todos los archivos
-- Contraseñas hasheadas con bcrypt (12 rounds)
-- Datos almacenados en ubicación segura (AppData oculto)
-- Verificación de integridad con HMAC
-- Archivos no editables externamente
-- Protección contra manipulación
+## Módulos Principales
+- **Censo de Habitantes** - Registro y gestión de datos comunitarios
+- **Control de Pagos** - Administración de pagos y cooperaciones
+- **Registro de Faenas** - Seguimiento de trabajo comunitario
 
-## Características del Sistema
-- Tabla interactiva en pantalla completa
-- Monto de cooperación ajustable
-- Agregar, editar y eliminar personas
-- Marcar pagos realizados
-- Apartado oculto con suma total de recaudación
-- Guardado automático cifrado
-- Colores visuales: verde para pagados, naranja para pendientes
-- Sincronización con censo de habitantes
+## Características
+- ✅ Autenticación con usuario y contraseña
+- ✅ Cifrado AES-256 de datos sensibles
+- ✅ Auditoría completa de todas las operaciones
+- ✅ Historial de cambios con usuario y timestamp
+- ✅ Guardado automático en tiempo real
+- ✅ Interfaz moderna y responsiva
+- ✅ Backups automáticos
 
-## Cómo Ejecutar
+## Instalación Rápida
 
-### Primera vez - Instalación
+### Requisitos
+- Python 3.13+
+
+### Pasos
 ```bash
+# 1. Instalar dependencias
 pip install -r requirements.txt
-```
 
-### Ejecutar el Sistema
-```bash
-# Opción 1: Ejecutar desde el punto de entrada principal (recomendado)
+# 2. Ejecutar el sistema
 python main.py
-
-# Opción 2: Script automático PowerShell
-./iniciar.ps1
-
-# Opción 3: Manual (solo censo)
-cd src
-python censo_habitantes.py
 ```
 
-El punto de entrada `main.py` iniciará automáticamente:
-1. Servidor API (si no está corriendo)
-2. Sistema de Censo de Habitantes (interfaz principal)
+El sistema abrirá un menú con las opciones disponibles.
 
-### Crear archivo .exe
-```bash
-# Instalar PyInstaller
-pip install pyinstaller
+## Uso
 
-# Crear el ejecutable principal
-pyinstaller --onefile --windowed --name="SistemaComunidad" main.py
-```
+1. **Censo** - Gestionar habitantes de la comunidad
+2. **Pagos** - Administrar pagos y cooperaciones
+3. **Faenas** - Registrar trabajo comunitario
 
-El archivo .exe se creará en la carpeta `dist/`
-
-## Uso del Sistema
-
-1. **Agregar Persona**: Clic en "Agregar Persona"
-2. **Editar**: Selecciona una fila y clic en "Editar Seleccionado"
-3. **Marcar Pago**: Selecciona una fila y clic en "Marcar como Pagado"
-4. **Ver Total**: Clic en "Mostrar Total Recaudado" (se puede ocultar)
-5. **Guardar**: Clic en "Guardar Datos"
-6. **Abrir Control de Pagos**: Botón en el censo para gestión financiera
-
-## Almacenamiento Seguro
+## Almacenamiento de Datos
 
 Los datos se guardan cifrados en:
 ```
-C:\Users\[TuUsuario]\AppData\Local\SistemaComunidad\
+C:\Users\[usuario]\AppData\Local\SistemaComunidad\
 ```
 
-Archivos protegidos:
-- `base_datos_habitantes.json` (cifrado)
-- `datos_pagos.json` (cifrado)
-
-La carpeta y archivos están ocultos y solo accesibles mediante el sistema.
-
-## Primera Ejecución
-
-Al iniciar por primera vez:
-1. El sistema creará 10 habitantes de muestra
-2. Se solicitará establecer una contraseña maestra
-3. Los archivos se guardarán cifrados automáticamente
+Protección:
+- Cifrado AES-256
+- Contraseñas hasheadas con bcrypt
+- Archivos ocultos
+- Auditoría de cambios
 
 ## Estructura del Proyecto
 
 ```
-sistema-digital-comunidad/
-├── main.py                    # Punto de entrada principal
-├── src/
-│   ├── api_local.py          # Servidor API REST
-│   ├── base_datos.py         # Gestión de base de datos
-│   ├── censo_habitantes.py   # Sistema de censo
-│   ├── control_pagos.py      # Control de pagos
-│   └── seguridad.py          # Módulo de seguridad
-├── requirements.txt          # Dependencias
-└── README.md                # Este archivo
+src/
+├── auth/              # Autenticación y seguridad
+├── core/              # Funciones core (BD, logger, validadores)
+├── modules/
+│   ├── censo/        # Censo de habitantes
+│   ├── pagos/        # Control de pagos
+│   ├── faenas/       # Registro de faenas
+│   └── historial/    # Auditoría y cambios
+├── tools/             # Backups y exportación
+├── ui/                # Componentes de interfaz
+└── config.py          # Configuración global
 ```
+
+## Licencia
+Uso comunitario

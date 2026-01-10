@@ -23,9 +23,10 @@ from src.core.validadores import validar_nombre, validar_monto, ErrorValidacion
 from src.tools.exportador import ExportadorExcel
 from src.tools.backups import GestorBackups
 from src.modules.historial.historial import GestorHistorial
-from src.ui.buscador import BuscadorAvanzado
-from src.ui.tema_moderno import TEMA_CLARO, TEMA_OSCURO, FUENTES, FUENTES_DISPLAY, ESPACIADO, ICONOS
+from src.ui.tema_moderno import FUENTES, FUENTES_DISPLAY, ESPACIADO, ICONOS
+from src.ui.estilos_globales import TEMA_GLOBAL
 from src.ui.ui_moderna import BarraSuperior, PanelModerno, BotonModerno
+from src.ui.buscador import BuscadorAvanzado
 
 class SistemaControlPagos:
     # Los temas y tamaños ahora vienen de config.py
@@ -38,11 +39,9 @@ class SistemaControlPagos:
         # Configuración visual proveniente de config.py y tema moderno
         self.TEMAS = TEMAS
         self.TAMAÑOS_LETRA = TAMAÑOS_LETRA
-        self.tema_claro = TEMA_CLARO
-        self.tema_oscuro = TEMA_OSCURO
+        self.tema_global = TEMA_GLOBAL
         self.style = ttk.Style()
-        # Tema y accesibilidad
-        self.tema_actual = tk.StringVar(value='claro')
+        # Accesibilidad
         self.tamaño_actual = tk.StringVar(value='normal')
         
         # Datos
@@ -61,7 +60,7 @@ class SistemaControlPagos:
         self.guardado_pendiente = None  # Timer para debounce de guardado
         self.usuario_actual = None  # Usuario autenticado
         self.gestor_auth = None  # Gestor de autenticación
-        self.gestor_historial = GestorHistorial()  # Gestor de historial
+        self.gestor_historial = GestorHistorial(id_cooperacion='general')  # Gestor de historial por cooperación
         self.buscador = BuscadorAvanzado()  # Buscador avanzado
         self.gestor_backups = GestorBackups()  # Gestor de backups
         self.tree_persona_map = {}  # Mapea iids del tree a objetos persona
@@ -69,18 +68,15 @@ class SistemaControlPagos:
         self.api_caida_notificada = False
         self.barra_superior = None  # Referencia a barra superior para actualizaciones
         
-        # Cargar datos si existen (incluyendo tema y tamaño guardados)
+        # Cargar datos si existen
         self.cargar_datos()
         self.aplicar_cooperacion_activa()
         
-        # Aplicar tema y tamaño guardados
-        if hasattr(self, 'tema_guardado'):
-            self.tema_actual.set(self.tema_guardado)
+        # Aplicar tamaño guardado
         if hasattr(self, 'tamaño_guardado'):
             self.tamaño_actual.set(self.tamaño_guardado)
         
-        # Ahora sí vincular los eventos de cambio
-        self.tema_actual.trace('w', self.aplicar_tema)
+        # Vincular eventos de cambio
         self.tamaño_actual.trace('w', self.aplicar_tamaño)
 
         # Configurar estilos iniciales
@@ -123,16 +119,6 @@ class SistemaControlPagos:
             import traceback
             traceback.print_exc()
             raise
-        
-        print("[SET_USUARIO] Llamando a aplicar_tema...")
-        try:
-            self.aplicar_tema()
-            print("[SET_USUARIO] aplicar_tema OK")
-        except Exception as e:
-            print(f"[SET_USUARIO] ERROR en aplicar_tema: {e}")
-            import traceback
-            traceback.print_exc()
-            raise
         print("[SET_USUARIO] Completado")
 
     def _tiene_permiso(self, permiso):
@@ -149,86 +135,38 @@ class SistemaControlPagos:
         return False
     
     def obtener_colores(self):
-        """Obtener paleta de colores del tema actual"""
-        return self.TEMAS[self.tema_actual.get()]
+        """Obtener paleta de colores del tema global"""
+        return self.tema_global
 
     def configurar_estilos(self):
-        """Configura estilos ttk segun tema actual"""
+        """Configura estilos ttk usando tema global claro"""
         colores = self.obtener_colores()
-        tema_visual = TEMA_CLARO if self.tema_actual.get() == 'claro' else TEMA_OSCURO
-        base_bg = colores.get('bg', tema_visual['bg_principal'])
-        base_fg = colores.get('fg', tema_visual['fg_principal'])
+        base_bg = colores.get('bg_principal')
+        base_fg = colores.get('fg_principal')
+        secondary_bg = colores.get('bg_secundario')
+        accent_primary = colores.get('accent_primary')
+        accent_secondary = colores.get('accent_secondary')
 
         self.style.theme_use('clam')
         self.style.configure('TFrame', background=base_bg)
-        self.style.configure('TLabelframe', background=colores['frame_bg'], foreground=base_fg, font=FUENTES['subtitulo'])
-        self.style.configure('TLabelframe.Label', background=colores['frame_bg'], foreground=base_fg, font=FUENTES['subtitulo'])
+        self.style.configure('TLabelframe', background=secondary_bg, foreground=base_fg, font=FUENTES['subtitulo'])
+        self.style.configure('TLabelframe.Label', background=secondary_bg, foreground=base_fg, font=FUENTES['subtitulo'])
         self.style.configure('TLabel', background=base_bg, foreground=base_fg, font=FUENTES['normal'])
-        self.style.configure('TButton', background=tema_visual['accent_primary'], foreground='#ffffff', padding=8, borderwidth=0, font=FUENTES['botones'])
-        self.style.map('TButton', background=[('active', tema_visual['accent_secondary'])], foreground=[('active', '#ffffff')])
+        self.style.configure('TButton', background=accent_primary, foreground='#ffffff', padding=8, borderwidth=0, font=FUENTES['botones'])
+        self.style.map('TButton', background=[('active', accent_secondary)], foreground=[('active', '#ffffff')])
         self.style.configure('TCheckbutton', background=base_bg, foreground=base_fg, font=FUENTES['normal'])
-        self.style.configure('TEntry', fieldbackground=colores['entrada_bg'], borderwidth=1)
-        self.style.configure('Treeview', background=tema_visual['table_row_even'], fieldbackground=tema_visual['table_row_even'],
+        self.style.configure('TEntry', fieldbackground=colores.get('input_bg', '#ffffff'), borderwidth=1)
+        self.style.configure('Treeview', background=colores.get('bg_secundario'), fieldbackground=colores.get('bg_secundario'),
                              foreground=base_fg, borderwidth=0, rowheight=26, font=FUENTES['normal'])
-        self.style.map('Treeview', background=[('selected', tema_visual['table_selected'])], foreground=[('selected', tema_visual['fg_principal'])])
-        self.style.configure('Treeview.Heading', background=tema_visual['table_header'], foreground=base_fg,
+        self.style.map('Treeview', background=[('selected', accent_primary)], foreground=[('selected', '#ffffff')])
+        self.style.configure('Treeview.Heading', background=colores.get('bg_tertiary'), foreground=base_fg,
                              padding=8, font=FUENTES['subtitulo'], borderwidth=1, relief='flat')
     
     def obtener_tamaños(self):
         """Obtener tamaños de letra"""
         return self.TAMAÑOS_LETRA[self.tamaño_actual.get()]
     
-    def aplicar_tema(self, *args):
-        """Aplicar cambios de tema a toda la interfaz inmediatamente"""
-        if not hasattr(self, 'tree'):
-            return  # Aún no se ha creado la interfaz
 
-        colores = self.obtener_colores()
-        tema_visual = TEMA_CLARO if self.tema_actual.get() == 'claro' else TEMA_OSCURO
-        self.configurar_estilos()
-        try:
-            self.root.configure(bg=colores['bg'])
-        except:
-            pass
-        
-        # Zebra + estados con alto contraste
-        self.tree.tag_configure('fila_par', background=tema_visual['table_row_even'], foreground=tema_visual['fg_principal'])
-        self.tree.tag_configure('fila_impar', background=tema_visual['table_row_odd'], foreground=tema_visual['fg_principal'])
-        self.tree.tag_configure('pagado', foreground=colores['exito_fg'])
-        self.tree.tag_configure('pendiente', foreground=colores['error_fg'])
-        self.tree.tag_configure('parcial', foreground=colores['alerta_fg'])
-        self.tree.tag_configure('pago_ok', background=colores['exito_fg'], foreground='#fff')
-        self.tree.tag_configure('pago_parcial', background=colores['alerta_fg'], foreground='#1a1a1a')
-
-        if hasattr(self, 'menu_persona'):
-            self.menu_persona.configure(
-                bg=tema_visual['bg_secundario'],
-                fg=tema_visual['fg_principal'],
-                activebackground=tema_visual['accent_secondary'],
-                activeforeground=tema_visual['fg_principal']
-            )
-        
-        # Actualizar etiquetas de total
-        if hasattr(self, 'total_pagado_label'):
-            self.total_pagado_label.config(foreground=colores['exito_fg'])
-        if hasattr(self, 'total_pendiente_label'):
-            self.total_pendiente_label.config(foreground=colores['error_fg'])
-        
-        # Refrescar tabla para aplicar cambios
-        self.actualizar_tabla()
-        self.guardar_datos(mostrar_alerta=False)
-    
-    def toggle_tema_desde_barra(self):
-        """Toggle de tema desde la barra superior"""
-        modo_actual = self.tema_actual.get()
-        nuevo_modo = 'oscuro' if modo_actual == 'claro' else 'claro'
-        self.tema_actual.set(nuevo_modo)
-        
-        # Actualizar texto del botón en la barra
-        if self.barra_superior:
-            icono = ICONOS['sol'] if nuevo_modo == 'oscuro' else ICONOS['luna']
-            texto = f"{icono} {'Claro' if nuevo_modo == 'oscuro' else 'Oscuro'}"
-            self.barra_superior.update_button_text(texto)
     
     def aplicar_tamaño(self, *args):
         """Aplicar cambios de tamaño de letra inmediatamente"""
@@ -372,6 +310,9 @@ class SistemaControlPagos:
         self.monto_cooperacion = coop.get('monto_cooperacion', self.monto_cooperacion)
         self.proyecto_actual = coop.get('proyecto', self.proyecto_actual)
         self.cooperacion_actual = coop.get('nombre', 'Cooperacion')
+        
+        # Reinicializar gestor de historial para esta cooperación
+        self.gestor_historial = GestorHistorial(id_cooperacion=self.coop_activa_id)
 
     def refrescar_selector_cooperacion(self, seleccionar_activa=True):
         nombres = [c.get('nombre', 'Sin nombre') for c in self.cooperaciones]
@@ -394,7 +335,7 @@ class SistemaControlPagos:
         self.actualizar_tabla()
         self.actualizar_totales()
         self.guardar_datos(mostrar_alerta=False)
-
+    
     def nueva_cooperacion(self):
         dialog = tk.Toplevel(self.root)
         dialog.title("Nueva Cooperacion")
@@ -446,6 +387,24 @@ class SistemaControlPagos:
             self.coop_activa_id = nueva['id']
             self.proyecto_actual = nueva['proyecto']
             self.monto_cooperacion = monto
+            
+            # Registrar en log de operaciones
+            usuario = self.usuario_actual['nombre'] if self.usuario_actual else 'Admin'
+            registrar_operacion('CREAR_COOPERACION', 'Nueva cooperación creada', {
+                'cooperacion_id': nueva['id'],
+                'nombre': nombre,
+                'proyecto': nueva['proyecto'],
+                'monto_base': f"${monto:.2f}",
+                'usuario': usuario
+            }, usuario)
+            
+            # Registrar en historial con todos los detalles
+            self.gestor_historial.registrar_cambio('CREAR', 'COOPERACION', nueva['id'], 
+                {'nombre': {'anterior': None, 'nuevo': nombre},
+                 'proyecto': {'anterior': None, 'nuevo': nueva['proyecto']},
+                 'monto': {'anterior': None, 'nuevo': f"${monto:.2f}"}},
+                usuario)
+            
             self.aplicar_cooperacion_activa()
             self.refrescar_selector_cooperacion()
             self.refrescar_interfaz_cooperacion()
@@ -507,11 +466,35 @@ class SistemaControlPagos:
             if any(nombre.lower() == c.get('nombre', '').lower() and c.get('id') != coop.get('id') for c in self.cooperaciones):
                 messagebox.showerror("Error", "Ya existe otra cooperacion con ese nombre")
                 return
+            
+            # Registrar cambios antes de aplicar
+            cambios = {}
+            if coop.get('nombre') != nombre:
+                cambios['nombre'] = {'anterior': coop.get('nombre', ''), 'nuevo': nombre}
+            if coop.get('monto_cooperacion') != monto:
+                cambios['monto'] = {'anterior': f"${coop.get('monto_cooperacion', 0):.2f}", 'nuevo': f"${monto:.2f}"}
+            if coop.get('proyecto') != proyecto_var.get().strip():
+                cambios['proyecto'] = {'anterior': coop.get('proyecto', ''), 'nuevo': proyecto_var.get().strip() or nombre}
+            
             coop['nombre'] = nombre
             coop['monto_cooperacion'] = monto
             coop['proyecto'] = proyecto_var.get().strip() or nombre
             self.monto_cooperacion = monto
             self.proyecto_actual = coop['proyecto']
+            
+            # Registrar en log si hubo cambios
+            if cambios:
+                usuario = self.usuario_actual['nombre'] if self.usuario_actual else 'Admin'
+                registrar_operacion('EDITAR_COOPERACION', 'Cooperación modificada', {
+                    'cooperacion_id': coop.get('id', 'desconocido'),
+                    'cambios': cambios,
+                    'usuario': usuario
+                }, usuario)
+                
+                # Registrar en historial
+                self.gestor_historial.registrar_cambio('EDITAR', 'COOPERACION', coop.get('id', 'desconocido'),
+                    cambios, usuario)
+            
             self.refrescar_selector_cooperacion()
             self.refrescar_interfaz_cooperacion()
             self.guardar_datos(mostrar_alerta=False)
@@ -565,7 +548,6 @@ class SistemaControlPagos:
             
             self.personas = coop['personas']
             self.actualizar_tabla()
-            self.actualizar_totales()
             self.guardar_datos(mostrar_alerta=False)
             
             if mostrar_mensaje:
@@ -658,17 +640,14 @@ class SistemaControlPagos:
             self.total_personas_label.config(text=str(len(self.personas)))
         
     def configurar_interfaz(self):
-        print("[CONFIGURAR_INTERFAZ] Iniciando...")
         # Frame principal con mejor espaciado
         colores = self.obtener_colores()
-        tema_visual = TEMA_CLARO if self.tema_actual.get() == 'claro' else TEMA_OSCURO
+        tema_visual = self.tema_global
         
-        print(f"[CONFIGURAR_INTERFAZ] Tema: {self.tema_actual.get()}")
         self.root.configure(bg=tema_visual['bg_principal'])
         
         main_frame = tk.Frame(self.root, bg=tema_visual['bg_principal'])
         main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), padx=0, pady=0)
-        print("[CONFIGURAR_INTERFAZ] main_frame creado y posicionado")
         
         # Configurar grid - IMPORTANTE: permitir que todo se expanda
         self.root.columnconfigure(0, weight=1)
@@ -684,7 +663,8 @@ class SistemaControlPagos:
         print("[CONFIGURAR_INTERFAZ] Creando BarraSuperior...")
         if not self.barra_superior:
             from src.ui.ui_moderna import BarraSuperior
-            self.barra_superior = BarraSuperior(main_frame, self.usuario_actual, self.toggle_tema_desde_barra)
+            # Callback vacío ya que removimos cambio de tema
+            self.barra_superior = BarraSuperior(main_frame, self.usuario_actual, lambda: None)
             self.barra_superior.grid(row=0, column=0, sticky=(tk.W, tk.E))
             print("[CONFIGURAR_INTERFAZ] BarraSuperior creada")
         
@@ -818,7 +798,7 @@ class SistemaControlPagos:
         self.total_pagado_label = tk.Label(pagado_container, text="$0.00", 
                                            font=FUENTES_DISPLAY['hero'],
                                            bg=tema_visual.get('card_bg', tema_visual['bg_secundario']),
-                                           fg=colores['exito_fg'])
+                                           fg=tema_visual['success'])
         self.total_pagado_label.pack(anchor=tk.W)
         
         # Total pendiente
@@ -832,7 +812,7 @@ class SistemaControlPagos:
         self.total_pendiente_label = tk.Label(pendiente_container, text="$0.00", 
                                              font=FUENTES_DISPLAY['hero'],
                                              bg=tema_visual.get('card_bg', tema_visual['bg_secundario']),
-                                             fg=colores['error_fg'])
+                                             fg=tema_visual['error'])
         self.total_pendiente_label.pack(anchor=tk.W)
         
         # Personas que pagaron
@@ -916,39 +896,9 @@ class SistemaControlPagos:
         BotonModerno(btn_row2, f"{ICONOS['guardar']} Crear Backup", tema=tema_visual, tipo='ghost',
                     command=self.crear_backup).pack(side=tk.LEFT, padx=(0, ESPACIADO['sm']))
         
-        # Botón toggle total
-        self.btn_toggle_total = BotonModerno(btn_row2, f"{ICONOS['estadisticas']} Mostrar Resumen", 
-                                            tema=tema_visual, tipo='ghost',
-                                            command=self.toggle_total)
-        self.btn_toggle_total.pack(side=tk.RIGHT)
-        
-        # ===== PANEL DE TOTAL (OCULTO INICIALMENTE) =====
-        self.total_frame = PanelModerno(content_container, titulo="💰 Resumen Financiero", tema=tema_visual)
-        self.total_frame.grid(row=2, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, ESPACIADO['md']))
-        self.total_frame.grid_remove()  # Ocultar inicialmente
-        
-        total_content = self.total_frame.content_frame
-        
-        # Cards de estadísticas
-        from src.ui.ui_componentes_extra import CardEstadistica
-        stats_container = tk.Frame(total_content, bg=tema_visual.get('card_bg', tema_visual['bg_secundario']))
-        stats_container.pack(fill=tk.X)
-        
-        self.card_recaudado = CardEstadistica(stats_container, "Total Recaudado", "$0.00",
-                                             icono=ICONOS['dinero'], color='success', tema=tema_visual)
-        self.card_recaudado.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, ESPACIADO['md']))
-        
-        self.card_pendiente = CardEstadistica(stats_container, "Total Pendiente", "$0.00",
-                                             icono=ICONOS['alerta'], color='warning', tema=tema_visual)
-        self.card_pendiente.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, ESPACIADO['md']))
-        
-        self.card_personas = CardEstadistica(stats_container, "Personas que Pagaron", "0",
-                                            icono=ICONOS['usuarios'], color='info', tema=tema_visual)
-        self.card_personas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        
         # ===== TABLA MODERNA =====
         self.table_panel = PanelModerno(content_container, titulo="📋 Lista de Personas", tema=tema_visual)
-        self.table_panel.grid(row=3, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S))
+        self.table_panel.grid(row=2, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S))
         
         # Agregar botón de pantalla completa en el título
         titulo_frame = self.table_panel.card.winfo_children()[0]  # El header_frame
@@ -1002,12 +952,12 @@ class SistemaControlPagos:
         
         # Configurar tags de colores para estados
         colores = self.obtener_colores()
-        tema_visual = TEMA_CLARO if self.tema_actual.get() == 'claro' else TEMA_OSCURO
-        self.tree.tag_configure('fila_par', background=tema_visual['table_row_even'], foreground=tema_visual['fg_principal'])
-        self.tree.tag_configure('fila_impar', background=tema_visual['table_row_odd'], foreground=tema_visual['fg_principal'])
-        self.tree.tag_configure('pagado', foreground=colores['exito_fg'])
-        self.tree.tag_configure('pendiente', foreground=colores['error_fg'])
-        self.tree.tag_configure('parcial', foreground=colores['alerta_fg'])
+        tema_visual = self.tema_global
+        self.tree.tag_configure('fila_par', background=tema_visual.get('bg_secundario'), foreground=tema_visual['fg_principal'])
+        self.tree.tag_configure('fila_impar', background=tema_visual.get('bg_tertiary'), foreground=tema_visual['fg_principal'])
+        self.tree.tag_configure('pagado', foreground=tema_visual['success'])
+        self.tree.tag_configure('pendiente', foreground=tema_visual['error'])
+        self.tree.tag_configure('parcial', foreground=tema_visual['warning'])
         
         # Menú contextual sobre filas con mejor estilo
         self.menu_persona = tk.Menu(self.root, tearoff=0,
@@ -1229,15 +1179,43 @@ class SistemaControlPagos:
                 messagebox.showerror("Error", "El monto debe ser mayor a 0")
                 self.monto_var.set(self.monto_cooperacion)
                 return
+            
+            # Guardar monto anterior para el historial
+            monto_anterior = self.monto_cooperacion
+            
+            # Actualizar monto de cooperación
             self.monto_cooperacion = nuevo_monto
             coop = self.obtener_cooperacion_activa()
             if coop:
                 coop['monto_cooperacion'] = nuevo_monto
-            messagebox.showinfo("Exito", f"Monto actualizado a ${nuevo_monto:.2f}")
+            
+            # Actualizar monto_esperado de todas las personas existentes
+            num_personas_afectadas = len(self.personas)
+            for persona in self.personas:
+                persona['monto_esperado'] = nuevo_monto
+            
+            # Registrar en el historial
+            registrar_operacion('CAMBIO_MONTO', 'Monto de cooperación actualizado', {
+                'cooperacion': self.cooperacion_actual or 'Sin nombre',
+                'monto_anterior': f"${monto_anterior:.2f}",
+                'monto_nuevo': f"${nuevo_monto:.2f}",
+                'personas_afectadas': num_personas_afectadas,
+                'usuario': self.usuario_actual['nombre'] if self.usuario_actual else 'Desconocido'
+            }, self.usuario_actual['nombre'] if self.usuario_actual else 'Admin')
+            
+            # Registrar cambio detallado en historial
+            usuario = self.usuario_actual['nombre'] if self.usuario_actual else 'Admin'
+            self.gestor_historial.registrar_cambio('EDITAR', 'COOPERACION', 
+                self.coop_activa_id or 'cooperacion-actual',
+                {'monto_cooperacion': {'anterior': f"${monto_anterior:.2f}", 'nuevo': f"${nuevo_monto:.2f}"}},
+                usuario)
+            
+            messagebox.showinfo("Exito", f"Monto actualizado a ${nuevo_monto:.2f}\nSe actualizó el monto esperado de {num_personas_afectadas} persona(s).")
+            self.guardar_datos(mostrar_alerta=False)
             self.actualizar_tabla()
             self.actualizar_totales()
-        except:
-            messagebox.showerror("Error", "Por favor ingrese un monto valido")
+        except Exception as e:
+            messagebox.showerror("Error", f"Por favor ingrese un monto valido\n{str(e)}")
             self.monto_var.set(self.monto_cooperacion)
     
     def agregar_persona(self):
@@ -1296,6 +1274,22 @@ class SistemaControlPagos:
             # Registrar en historial
             usuario = self.usuario_actual['nombre'] if self.usuario_actual else 'Sistema'
             self.gestor_historial.registrar_creacion('PERSONA', folio, persona, usuario)
+            
+            # Registrar en log de operaciones
+            registrar_operacion('AGREGAR_PERSONA', 'Nueva persona agregada al sistema', {
+                'cooperacion': self.cooperacion_actual or 'Sin nombre',
+                'folio': folio,
+                'nombre': nombre,
+                'monto_esperado': f"${self.monto_cooperacion:.2f}",
+                'notas': notas_entry.get().strip() or 'Sin notas',
+                'usuario': usuario
+            }, usuario)
+            
+            # Registrar en historial
+            self.gestor_historial.registrar_cambio('CREAR', 'PERSONA', folio,
+                {'nombre': {'anterior': None, 'nuevo': nombre},
+                 'monto': {'anterior': None, 'nuevo': f"${self.monto_cooperacion:.2f}"}},
+                usuario)
             
             self.actualizar_tabla()
             self.actualizar_totales()
@@ -1369,6 +1363,20 @@ class SistemaControlPagos:
             if persona.get('notas', '') != notas_entry.get().strip():
                 cambios['notas'] = {'anterior': persona.get('notas', ''), 'nuevo': notas_entry.get().strip()}
             
+            # Registrar cambios si los hubo
+            if cambios:
+                usuario = self.usuario_actual['nombre'] if self.usuario_actual else 'Sistema'
+                registrar_operacion('EDITAR_PERSONA', 'Información de persona modificada', {
+                    'cooperacion': self.cooperacion_actual or 'Sin nombre',
+                    'folio': persona.get('folio', 'SIN-FOLIO'),
+                    'cambios': cambios,
+                    'usuario': usuario
+                }, usuario)
+                
+                # Registrar en historial
+                self.gestor_historial.registrar_cambio('EDITAR', 'PERSONA', persona.get('folio', 'SIN-FOLIO'),
+                    cambios, usuario)
+            
             self.personas[index]['nombre'] = nombre
             self.personas[index]['notas'] = notas_entry.get().strip()
             
@@ -1409,6 +1417,18 @@ class SistemaControlPagos:
             self.gestor_historial.registrar_cambio('ELIMINAR', 'PERSONA', persona.get('folio', ''), 
                 {'persona_eliminada': persona}, usuario)
             
+            # Registrar en log de operaciones
+            registrar_operacion('ELIMINAR_PERSONA', 'Persona eliminada del sistema', {
+                'cooperacion': self.cooperacion_actual or 'Sin nombre',
+                'folio': persona.get('folio', 'SIN-FOLIO'),
+                'nombre': persona['nombre'],
+                'monto_esperado': f"${persona.get('monto_esperado', 0):.2f}",
+                'pagado': f"${sum(pago['monto'] for pago in persona.get('pagos', [])):.2f}",
+                'usuario': usuario
+            }, usuario)
+            
+            # Ya está registrado en gestor_historial arriba
+            
             self.personas.pop(index)
             self.actualizar_tabla()
             self.actualizar_totales()
@@ -1447,7 +1467,7 @@ class SistemaControlPagos:
         
         tamaños = self.obtener_tamaños()
         colores = self.obtener_colores()
-        tema_visual = TEMA_CLARO if self.tema_actual.get() == 'claro' else TEMA_OSCURO
+        tema_visual = self.tema_global
         dialog.configure(bg=tema_visual['bg_principal'])
 
         header = tk.Frame(dialog, bg=tema_visual['bg_secundario'])
@@ -1471,8 +1491,8 @@ class SistemaControlPagos:
             tk.Label(cont, text=valor, font=FUENTES['titulo'],
                      bg=tema_visual['bg_secundario'], fg=color_fg).pack(anchor=tk.W)
         chip(resumen, "Esperado", f"${monto_esperado:.2f}", tema_visual['fg_principal'])
-        chip(resumen, "Pagado", f"${total_pagado:.2f}", colores['exito_fg'])
-        chip(resumen, "Pendiente", f"${pendiente:.2f}", colores['error_fg'])
+        chip(resumen, "Pagado", f"${total_pagado:.2f}", tema_visual['success'])
+        chip(resumen, "Pendiente", f"${pendiente:.2f}", tema_visual['error'])
 
         form = tk.Frame(dialog, bg=tema_visual['bg_principal'])
         form.pack(fill=tk.BOTH, expand=True, padx=16, pady=(0, 12))
@@ -1522,7 +1542,9 @@ class SistemaControlPagos:
                     'total_anterior': total_pagado,
                     'total_nuevo': total_pagado + monto_pago,
                     'pendiente_anterior': pendiente,
-                    'pendiente_nuevo': max(0, pendiente - monto_pago)
+                    'pendiente_nuevo': max(0, pendiente - monto_pago),
+                    # Incluir nombre para que el historial pueda mostrarlo
+                    'nombre': persona.get('nombre', '')
                 }
                 self.gestor_historial.registrar_cambio(
                     'PAGO',
@@ -1582,8 +1604,8 @@ class SistemaControlPagos:
         """Animar la fila con pulso de color"""
         colores = self.obtener_colores()
         colores_pulso = [
-            colores['exito_fg'] if tipo == 'completado' else colores['alerta_fg'],
-            colores['fg']
+            tema_visual['success'] if tipo == 'completado' else tema_visual['warning'],
+            tema_visual['fg_principal']
         ]
         
         def pulso(idx=0):
@@ -1683,24 +1705,6 @@ class SistemaControlPagos:
         
         ttk.Button(dialog, text="Cerrar", command=dialog.destroy).pack(pady=10)
     
-    def toggle_tema_desde_barra(self):
-        """Cambiar tema desde la barra superior"""
-        nuevo_tema = 'oscuro' if self.tema_actual.get() == 'claro' else 'claro'
-        self.tema_actual.set(nuevo_tema)
-        # El trace de tema_actual llamará a aplicar_tema
-    
-    def toggle_total(self):
-        self.mostrar_total = not self.mostrar_total
-        
-        if self.mostrar_total:
-            self.total_frame.grid()
-            self.btn_toggle_total.config(text=f"{ICONOS['contraer']} Ocultar Resumen")
-        else:
-            self.total_frame.grid_remove()
-            self.btn_toggle_total.config(text=f"{ICONOS['estadisticas']} Mostrar Resumen")
-        
-        self.actualizar_totales()
-    
     def buscar_tiempo_real(self):
         """Busqueda en tiempo real"""
         self.actualizar_tabla()
@@ -1795,6 +1799,7 @@ class SistemaControlPagos:
             self.menu_persona.grab_release()
     
     def actualizar_totales(self):
+        """Actualizar los totales en el panel de información del proyecto"""
         total_pagado = 0
         total_pendiente = 0
         personas_pagadas = 0
@@ -1826,35 +1831,7 @@ class SistemaControlPagos:
         
         if hasattr(self, 'personas_pagadas_label'):
             self.personas_pagadas_label.config(text=f"{personas_pagadas} de {len(self.personas)}")
-        
-        # Actualizar cards de estadísticas si existen
-        if hasattr(self, 'card_recaudado') and self.card_recaudado:
-            try:
-                if hasattr(self.card_recaudado, 'update_value'):
-                    if self.cifras_visibles:
-                        self.card_recaudado.update_value(f"${total_pagado:.2f}")
-                    else:
-                        self.card_recaudado.update_value("••••••")
-            except:
-                pass
-        
-        if hasattr(self, 'card_pendiente') and self.card_pendiente:
-            try:
-                if hasattr(self.card_pendiente, 'update_value'):
-                    if self.cifras_visibles:
-                        self.card_pendiente.update_value(f"${total_pendiente:.2f}")
-                    else:
-                        self.card_pendiente.update_value("••••••")
-            except:
-                pass
-        
-        if hasattr(self, 'card_personas') and self.card_personas:
-            try:
-                if hasattr(self.card_personas, 'update_value'):
-                    self.card_personas.update_value(f"{personas_pagadas} de {len(self.personas)}")
-            except:
-                pass
-
+    
     def _persona_iid(self, persona):
         """Devuelve un iid estable para el Treeview basado en el objeto persona"""
         folio = persona.get('folio', 'SIN-FOLIO')
@@ -1884,7 +1861,6 @@ class SistemaControlPagos:
                 'cooperaciones': self.cooperaciones,
                 'cooperacion_activa': self.coop_activa_id,
                 'password_hash': self.password_hash,
-                'tema': self.tema_actual.get(),
                 'tamaño': self.tamaño_actual.get(),
                 'fecha_guardado': datetime.now().strftime("%d/%m/%Y %H:%M:%S")
             }
@@ -1909,7 +1885,6 @@ class SistemaControlPagos:
                     if 'cooperaciones' in datos:
                         self.cooperaciones = datos.get('cooperaciones', [])
                         self.coop_activa_id = datos.get('cooperacion_activa')
-                        self.tema_guardado = datos.get('tema', 'claro')
                         self.tamaño_guardado = datos.get('tamaño', 'normal')
             if not self.cooperaciones:
                 nueva = {
@@ -1998,26 +1973,22 @@ class SistemaControlPagos:
     def ver_historial_completo(self):
         """Abrir ventana de historial completo"""
         from src.modules.historial.ventana_historial import VentanaHistorial
-        VentanaHistorial(self.root)
+        # Pasar el gestor_historial de la aplicación para que use los datos actuales
+        VentanaHistorial(self.root, gestor_historial=self.gestor_historial)
     
     def cerrar_aplicacion(self):
-        """Cerrar aplicación con backup automático"""
+        """Cerrar aplicación con backup automático silencioso"""
         try:
-            # Preguntar si desea crear backup
-            respuesta = messagebox.askyesno("Backup Automático", 
-                "¿Desea crear un backup antes de salir?")
-            
-            if respuesta:
-                registrar_operacion('BACKUP_AUTO', 'Creando backup automático al cerrar', {})
+            # Hacer backup silencioso (los datos ya se guardan en tiempo real con guardar_datos)
+            try:
                 resultado = self.gestor_backups.crear_backup_completo()
                 if resultado['exito']:
                     # Limpiar backups antiguos (mantener solo últimos 10)
-                    try:
-                        self.gestor_backups.limpiar_backups_antiguos(10)
-                    except:
-                        pass  # No es crítico si falla
-                    messagebox.showinfo("Backup Creado", 
-                        f"Backup creado exitosamente:\n{resultado['nombre_carpeta']}")
+                    self.gestor_backups.limpiar_backups_antiguos(10)
+                    registrar_operacion('BACKUP_AUTO', 'Backup automático creado al cerrar', 
+                        {'archivo': resultado['nombre_carpeta']})
+            except:
+                pass  # No es crítico si falla el backup
             
             # Cerrar sesión si hay usuario activo
             if self.usuario_actual and self.gestor_auth:

@@ -1,118 +1,75 @@
-==============================================
-  SISTEMA DIGITAL COMUNIDAD - GUIA RAPIDA
-==============================================
+========================================
+SISTEMA DIGITAL DE GESTIÓN COMUNITARIA
+========================================
 
-PUNTOS DE ENTRADA:
-------------------
-- main.py            (Menú principal: censo o control de pagos)
-- src/api_local.py   (Servidor API local, se inicia solo desde main/control_pagos)
+INICIO RÁPIDO
+=============
 
-ARCHIVOS CLAVE:
----------------
+1. Instalar dependencias (primera vez):
+   pip install -r requirements.txt
+
+2. Ejecutar el sistema:
+   python main.py
+
+3. Seleccionar opción del menú:
+   - 1: Censo de Habitantes
+   - 2: Control de Pagos (requiere autenticación)
+   - 3: Registro de Faenas (requiere autenticación)
+
+Credenciales de demo:
+   Usuario: admin
+   Contraseña: admin123
+
+
+ESTRUCTURA DE DIRECTORIOS
+==========================
+
 src/
-  ├── api_local.py           (Servidor API)
-  ├── censo_habitantes.py    (Censo de habitantes con tema moderno)
-  ├── control_pagos.py       (Pagos con autenticación, tema moderno y menú contextual)
-  ├── login_window.py        (Ventana de login moderna)
-  ├── tema_moderno.py        (Paletas, fuentes, espaciado, iconos)
-  ├── historial.py           (Auditoría persistente con exportación CSV/TXT)
-  ├── seguridad.py           (Cifrado y hash)
-  └── config.py              (Config global, rutas seguras, temas)
-
-iniciar.ps1                  (Script de inicio rápido)
-requirements.txt             (Dependencias)
-
-
-SEGURIDAD IMPLEMENTADA:
------------------------
-- Archivos cifrados con AES-256
-- Contraseñas hasheadas con bcrypt (12 rounds)
-- Datos guardados en AppData\Local\SistemaComunidad (oculto)
-- Verificación de integridad con HMAC
-- Archivos no editables externamente
-- Protección contra manipulación
+├── auth/              # Autenticación y seguridad
+├── core/              # Funciones core (BD, logger, validadores)
+├── modules/           # Módulos principales
+│   ├── censo/        # Censo de habitantes
+│   ├── pagos/        # Control de pagos
+│   ├── faenas/       # Registro de faenas
+│   └── historial/    # Auditoría de cambios
+├── tools/             # Backups y exportación
+├── ui/                # Componentes de interfaz
+└── config.py          # Configuración global
 
 
-COMO INICIAR:
--------------
+ALMACENAMIENTO
+==============
 
-OPCION 1 - Menú principal (recomendada):
-  1) Activar el entorno: venv\Scripts\activate
-  2) python main.py
-  3) Elegir 1 (censo) o 2 (control de pagos). La API se inicia sola si no está activa.
+Los datos se guardan en:
+C:\Users\[usuario]\AppData\Local\SistemaComunidad\
 
-OPCION 2 - Manual:
-  1) python src/api_local.py
-  2) python src/censo_habitantes.py (censo)
-  3) python src/control_pagos.py    (pagos)
+Incluye:
+- Base de datos de habitantes
+- Registro de pagos
+- Registro de faenas
+- Historial de auditoría
+- Backups automáticos
+- Logs del sistema
 
-Credenciales demo (control de pagos): usuario=admin contraseña=admin123
-
-
-CARACTERISTICAS CLAVE:
-----------------------
-
-- Folios y sincronizacion:
-  - Folios HAB-0001, HAB-0002, etc., orden alfabetico y sin duplicados.
-  - Sincronizacion Pagos↔Censo; si no existe en censo se crea.
-
-- Pagos modernos:
-  - Autenticacion con roles; login redimensionable.
-  - Tema claro/oscuro, tabla con zebra, menú contextual (clic derecho) para editar/pagar/eliminar/ver historial.
-  - Pagos parciales y completos con auditoria detallada (antes/despues) y animacion de fila.
-  - Exportar cooperacion a Excel.
-
-- Censo moderno:
-  - Tema claro/oscuro aplicado, fuentes modernas, tabla con scroll.
-  - Busqueda en tiempo real y agregado de habitantes.
-
-- Historial y auditoria:
-  - Ventana de historial con filtros y detalles.
-  - Exportacion a TXT o CSV.
-  - Registro de pagos, creaciones, ediciones y eliminaciones con usuario y timestamp.
-
-- Respaldo y seguridad:
-  - Datos cifrados en AppData\Local\SistemaComunidad.
-  - Hash bcrypt, cifrado AES-256, HMAC, archivos ocultos.
-  - Prompt de backup al cerrar Pagos; limpieza de backups antiguos.
+Todos los datos están CIFRADOS con AES-256
 
 
-PRIMER USO:
------------
-1. python -m venv venv
-2. venv\Scripts\activate
-3. pip install -r requirements.txt
-4. python main.py (elige opción 2), establece contraseña la primera vez.
+CARACTERÍSTICAS DE SEGURIDAD
+============================
+
+✓ Autenticación de usuarios
+✓ Cifrado AES-256 de datos
+✓ Contraseñas hasheadas con bcrypt
+✓ Auditoría de todos los cambios
+✓ Historial de operaciones con timestamp
+✓ Backups automáticos
+✓ Datos guardados en ubicación protegida
 
 
-DATOS DE PRUEBA:
-----------------
-- 10 habitantes de muestra pre-cargados (HAB-0001 a HAB-0010)
-- Usuario demo: admin / admin123
+AYUDA Y SOPORTE
+===============
 
-
-UBICACION DE DATOS:
--------------------
-Los archivos se guardan cifrados en:
-C:\Users\[TuUsuario]\AppData\Local\SistemaComunidad\
-
-Archivos protegidos:
-- base_datos_habitantes.json (cifrado)
-- datos_pagos.json (cifrado)
-- historial_cambios.json (cifrado)
-- Carpeta oculta del sistema
-
-
-CONVERTIR A .EXE:
------------------
-pyinstaller --onefile --windowed --name="ControlPagos" src/control_pagos.py
-pyinstaller --onefile --windowed --name="CensoHabitantes" src/censo_habitantes.py
-pyinstaller --onefile --name="APILocal" src/api_local.py
-
-
-SOPORTE:
---------
-- La API debe estar ejecutandose para sincronizacion
-- Si no hay API, se asignan folios temporales
-- Los datos se guardan cifrados y ocultos
-- Contraseña guardada de forma segura (bcrypt + salt)
+Para problemas:
+- Revisar los logs en AppData\Local\SistemaComunidad\logs
+- Usar reset_datos.py para reiniciar la base de datos
+- Contactar al administrador del sistema

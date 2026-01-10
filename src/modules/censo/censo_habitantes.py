@@ -15,7 +15,8 @@ if __name__ == "__main__":
         sys.path.insert(0, proyecto_raiz)
 
 from src.config import API_URL, TEMAS
-from src.ui.tema_moderno import TEMA_CLARO, TEMA_OSCURO, FUENTES
+from src.ui.estilos_globales import TEMA_GLOBAL
+from src.ui.tema_moderno import FUENTES
 from src.core.logger import registrar_operacion, registrar_error
 from src.core.validadores import validar_nombre
 from src.modules.indicadores.indicadores_estado import calcular_estado_habitante
@@ -29,12 +30,15 @@ class SistemaCensoHabitantes:
         # Configurar icono y estilos
         self.root.geometry("1400x800")
         self.style = ttk.Style()
-        self.tema_actual = 'claro'
         
         self.api_url = API_URL
         self.habitantes = []
         self.nombre_visible = tk.BooleanVar(value=True)
         self.folio_visible = tk.BooleanVar(value=True)
+        
+        # Referencias para las ventanas de procesos (evitar duplicados)
+        self.proceso_control_pagos = None
+        self.proceso_control_faenas = None
         
         # Estilos iniciales
         self.configurar_estilos()
@@ -48,19 +52,19 @@ class SistemaCensoHabitantes:
         self.cargar_habitantes()
 
     def obtener_colores(self):
-        return TEMAS[self.tema_actual]
+        return TEMA_GLOBAL
 
     def configurar_estilos(self):
         colores = self.obtener_colores()
         self.style.theme_use('clam')
-        self.style.configure('TFrame', background=colores['bg'])
-        self.style.configure('TLabel', background=colores['bg'], foreground=colores['fg'])
-        self.style.configure('TButton', background=colores['button_bg'], foreground=colores['fg'], padding=6, borderwidth=1)
-        self.style.map('TButton', background=[('active', colores.get('button_hover', colores['button_bg']))])
-        self.style.configure('TEntry', fieldbackground=colores['entrada_bg'], borderwidth=1)
-        self.style.configure('Treeview', background=colores['tablas_even'], fieldbackground=colores['tablas_even'], foreground=colores['fg'], borderwidth=0)
-        self.style.map('Treeview', background=[('selected', colores['tablas_odd'])], foreground=[('selected', colores['fg'])])
-        self.style.configure('Treeview.Heading', background=colores['frame_bg'], foreground=colores['fg'], padding=6)
+        self.style.configure('TFrame', background=colores['bg_principal'])
+        self.style.configure('TLabel', background=colores['bg_principal'], foreground=colores['fg_principal'])
+        self.style.configure('TButton', background=colores['bg_secundario'], foreground=colores['fg_principal'], padding=6, borderwidth=1)
+        self.style.map('TButton', background=[('active', colores['button_hover'])])
+        self.style.configure('TEntry', fieldbackground=colores['input_bg'], borderwidth=1)
+        self.style.configure('Treeview', background=colores['table_row_even'], fieldbackground=colores['table_row_even'], foreground=colores['fg_principal'], borderwidth=0)
+        self.style.map('Treeview', background=[('selected', colores['table_selected'])], foreground=[('selected', colores['fg_principal'])])
+        self.style.configure('Treeview.Heading', background=colores['table_header'], foreground=colores['table_header_text'], padding=6)
 
     def asegurar_api_activa(self):
         """Comprueba la API y la levanta si no está activa"""
@@ -386,14 +390,15 @@ class SistemaCensoHabitantes:
             nombre = nombre_entry.get().strip()
             
             # Validar nombre
-            validacion = validar_nombre(nombre)
-            if not validacion['valido']:
-                messagebox.showerror("Error", validacion['mensaje'])
+            try:
+                nombre_validado = validar_nombre(nombre)
+            except Exception as e:
+                messagebox.showerror("Error", str(e))
                 return
             
             try:
                 response = requests.post(f"{self.api_url}/habitantes",
-                                        json={'nombre': nombre},
+                                        json={'nombre': nombre_validado},
                                         timeout=5)
                 data = response.json()
                 
@@ -419,8 +424,19 @@ class SistemaCensoHabitantes:
         nombre_entry.focus()
 
     def abrir_control_pagos(self):
-        """Lanza la app de control de pagos"""
+        """Lanza la app de control de pagos - evita abrir duplicados"""
         try:
+            # Verificar si ya existe un proceso abierto
+            if self.proceso_control_pagos is not None:
+                # Verificar si el proceso sigue ejecutándose
+                if self.proceso_control_pagos.poll() is None:
+                    # El proceso sigue activo, traerlo al frente
+                    messagebox.showinfo("Información", "Control de Pagos ya está abierto.")
+                    return
+                else:
+                    # El proceso terminó, permitir abrir uno nuevo
+                    self.proceso_control_pagos = None
+            
             script_dir = os.path.dirname(os.path.abspath(__file__))
             # Navegar a la carpeta de pagos (subir un nivel y entrar a pagos)
             pagos_path = os.path.join(script_dir, "..", "pagos", "control_pagos.py")
@@ -431,13 +447,24 @@ class SistemaCensoHabitantes:
                 return
             
             # Abrir el sistema de control de pagos
-            subprocess.Popen([sys.executable, pagos_path])
+            self.proceso_control_pagos = subprocess.Popen([sys.executable, pagos_path])
         except Exception as e:
             messagebox.showerror("Error", f"No se pudo abrir Control de Pagos:\n{str(e)}")
 
     def abrir_registro_faenas(self):
-        """Lanza la app de registro de faenas"""
+        """Lanza la app de registro de faenas - evita abrir duplicados"""
         try:
+            # Verificar si ya existe un proceso abierto
+            if self.proceso_control_faenas is not None:
+                # Verificar si el proceso sigue ejecutándose
+                if self.proceso_control_faenas.poll() is None:
+                    # El proceso sigue activo, mostrar mensaje
+                    messagebox.showinfo("Información", "Registro de Faenas ya está abierto.")
+                    return
+                else:
+                    # El proceso terminó, permitir abrir uno nuevo
+                    self.proceso_control_faenas = None
+            
             script_dir = os.path.dirname(os.path.abspath(__file__))
             # Navegar a la carpeta de faenas (subir un nivel y entrar a faenas)
             faenas_path = os.path.join(script_dir, "..", "faenas", "control_faenas.py")
@@ -448,7 +475,7 @@ class SistemaCensoHabitantes:
                 return
 
             # Abrir con año por defecto 2025 para ver el resumen anual simulado
-            subprocess.Popen([sys.executable, faenas_path, "--anio", "2025"])
+            self.proceso_control_faenas = subprocess.Popen([sys.executable, faenas_path, "--anio", "2025"])
         except Exception as e:
             messagebox.showerror("Error", f"No se pudo abrir Registro de Faenas:\n{str(e)}")
 

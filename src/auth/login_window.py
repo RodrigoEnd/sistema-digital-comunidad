@@ -14,7 +14,6 @@ class VentanaLogin:
         self.callback_exito = callback_exito
         self.gestor_auth = GestorAutenticacion()
         self.usuario_actual = None
-        self.tema_actual = 'claro'
         
         self.crear_ventana()
     

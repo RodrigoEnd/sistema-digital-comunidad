@@ -71,21 +71,12 @@ class BarraSuperior:
         tk.Label(user_text_frame, text=rol, font=FUENTES['pequeño'],
                 fg='#d0d0d0', bg='#6699cc').pack(anchor=tk.W)
         
-        # Botón tema moderno con borde redondeado visual
-        tema_container = tk.Frame(control_frame, bg='#ffffff', relief=tk.FLAT)
-        tema_container.pack(side=tk.LEFT)
+        # Botón de tema deshabilitado (modo noche removido)
+        # tema_container = tk.Frame(control_frame, bg='#ffffff', relief=tk.FLAT)
+        # tema_container.pack(side=tk.LEFT)
+        # self.btn_tema = tk.Button(...)
         
-        self.btn_tema = tk.Button(tema_container, text=f"{ICONOS['luna']} Oscuro",
-                     font=FUENTES['botones'], bg='#ffffff', fg=self.tema['accent_primary'],
-                     relief=tk.FLAT, padx=ESPACIADO['lg'], pady=ESPACIADO['md'],
-                     cursor='hand2', command=self.callback_cambio_tema,
-                     activebackground='#f0f0f0', activeforeground=self.tema['accent_primary'],
-                     borderwidth=0)
-        self.btn_tema.pack(padx=2, pady=2)
-        
-        # Efectos hover
-        self.btn_tema.bind('<Enter>', self._on_btn_enter)
-        self.btn_tema.bind('<Leave>', self._on_btn_leave)
+        # Efectos hover (removido junto con botón de tema)
     
     def _on_btn_enter(self, event):
         """Efecto hover al entrar"""

@@ -10,11 +10,15 @@ from src.ui.tema_moderno import TEMA_CLARO, TEMA_OSCURO, FUENTES
 class VentanaHistorial:
     """Ventana para visualizar el historial de cambios"""
     
-    def __init__(self, parent, filtro_entidad=None, filtro_id=None):
+    def __init__(self, parent, gestor_historial=None, filtro_entidad=None, filtro_id=None):
         self.parent = parent
         self.filtro_entidad = filtro_entidad
         self.filtro_id = filtro_id
-        self.gestor_historial = GestorHistorial()
+        # Usar gestor pasado o crear uno nuevo
+        if gestor_historial:
+            self.gestor_historial = gestor_historial
+        else:
+            self.gestor_historial = GestorHistorial()
         
         self.crear_ventana()
     
@@ -23,7 +27,8 @@ class VentanaHistorial:
         tema_visual = TEMA_OSCURO
         self.ventana = tk.Toplevel(self.parent)
         self.ventana.title("Historial de Cambios - Auditoría")
-        self.ventana.geometry("1100x650")
+        self.ventana.geometry("1200x750")
+        self.ventana.minsize(1000, 600)
         self.ventana.transient(self.parent)
         self.ventana.configure(bg=tema_visual['bg_principal'])
 
@@ -91,7 +96,7 @@ class VentanaHistorial:
         
         # Frame de tabla
         tabla_frame = ttk.Frame(main_frame)
-        tabla_frame.pack(fill=tk.BOTH, expand=True)
+        tabla_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
         
         # Scrollbars
         scrollbar_y = ttk.Scrollbar(tabla_frame, orient=tk.VERTICAL)
@@ -133,9 +138,9 @@ class VentanaHistorial:
         
         # Frame de detalles
         detalles_frame = ttk.LabelFrame(main_frame, text="Detalles del Cambio", padding="10")
-        detalles_frame.pack(fill=tk.X, pady=(10, 0))
+        detalles_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
         
-        self.detalles_text = tk.Text(detalles_frame, height=6, wrap=tk.WORD, 
+        self.detalles_text = tk.Text(detalles_frame, height=5, wrap=tk.WORD, 
                          font=('Courier New', 10), state='disabled',
                          bg=tema_visual['bg_secundario'], fg=tema_visual['fg_principal'],
                          insertbackground=tema_visual['fg_principal'], relief=tk.FLAT, padx=10, pady=10)
@@ -146,12 +151,20 @@ class VentanaHistorial:
         
         # Botones inferiores
         bottom_frame = ttk.Frame(main_frame)
-        bottom_frame.pack(fill=tk.X, pady=(10, 0))
-        ttk.Button(bottom_frame, text="🔄 Actualizar", command=self.cargar_historial, 
+        bottom_frame.pack(fill=tk.X, pady=(0, 5))
+        
+        left_buttons = ttk.Frame(bottom_frame)
+        left_buttons.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        ttk.Button(left_buttons, text="🔄 Actualizar", command=self.cargar_historial, 
                   width=15).pack(side=tk.LEFT, padx=5)
-        ttk.Button(bottom_frame, text="📋 Exportar", command=self.exportar_historial, 
+        ttk.Button(left_buttons, text="📋 Exportar", command=self.exportar_historial, 
                   width=15).pack(side=tk.LEFT, padx=5)
-        ttk.Button(bottom_frame, text="✕ Cerrar", command=self.ventana.destroy, 
+        
+        right_buttons = ttk.Frame(bottom_frame)
+        right_buttons.pack(side=tk.RIGHT)
+        
+        ttk.Button(right_buttons, text="✕ Cerrar", command=self.ventana.destroy, 
                   width=12).pack(side=tk.RIGHT, padx=5)
         
         # Evento de selección
@@ -195,12 +208,15 @@ class VentanaHistorial:
             else:
                 tag = 'otro'
             
+            # Calcular valor a mostrar en columna 'Entidad'
+            entidad_mostrar = self._obtener_nombre_mostrable(registro)
+
             self.tree.insert('', tk.END, values=(
                 registro.get('id', ''),
                 registro.get('fecha', ''),
                 registro.get('hora', ''),
                 tipo,
-                registro.get('entidad', ''),
+                entidad_mostrar,
                 registro.get('usuario', ''),
                 resumen
             ), tags=(tag,), iid=str(registro.get('id', '')))
@@ -253,6 +269,40 @@ class VentanaHistorial:
             return f"Se editó {entidad.lower()} '{id_entidad}' ({num_cambios} cambio(s))"
         else:
             return f"{tipo} en {entidad.lower()} '{id_entidad}'"
+
+    def _obtener_nombre_mostrable(self, registro):
+        """Obtiene el nombre a mostrar en la columna 'Entidad'.
+        - Para PERSONA: primer nombre si es posible.
+        - En otros casos: texto de la entidad original.
+        """
+        entidad = registro.get('entidad', '')
+        if entidad != 'PERSONA':
+            return entidad
+
+        nombre = None
+        cambios = registro.get('cambios', {})
+
+        if isinstance(cambios, dict):
+            # Caso CREAR/EDITAR: cambios['nombre'] suele ser dict con 'nuevo'|'anterior'
+            if 'nombre' in cambios:
+                info = cambios['nombre']
+                if isinstance(info, dict):
+                    nombre = info.get('nuevo') or info.get('anterior')
+                elif isinstance(info, str):
+                    nombre = info
+            # Caso ELIMINAR: guardamos persona completa en 'persona_eliminada'
+            if not nombre and 'persona_eliminada' in cambios and isinstance(cambios['persona_eliminada'], dict):
+                nombre = cambios['persona_eliminada'].get('nombre')
+            # Caso PAGO: añadiremos 'nombre' plano en el dict de cambios
+            if not nombre and 'nombre' in cambios and isinstance(cambios.get('nombre'), str):
+                nombre = cambios.get('nombre')
+
+        if isinstance(nombre, str) and nombre.strip():
+            # Extraer primer nombre
+            return nombre.strip().split()[0]
+
+        # Fallback: mostrar el tipo de entidad si no se puede deducir el nombre
+        return entidad
     
     def mostrar_detalles(self, event=None):
         """Mostrar detalles del registro seleccionado"""

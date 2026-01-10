@@ -11,10 +11,19 @@ from src.config import RUTA_SEGURA
 from src.core.logger import registrar_operacion, registrar_error
 
 class GestorHistorial:
-    """Gestor de historial de cambios y auditoria"""
+    """Gestor de historial de cambios y auditoria independiente por cooperación"""
     
-    def __init__(self):
-        self.archivo_historial = os.path.join(RUTA_SEGURA, 'historial_cambios.json')
+    def __init__(self, id_cooperacion='global'):
+        """
+        Inicializa el gestor de historial
+        
+        Args:
+            id_cooperacion (str): ID de la cooperación. 'global' para historial general
+        """
+        self.id_cooperacion = id_cooperacion
+        # Usar nombre de archivo diferente para cada cooperación
+        nombre_archivo = f'historial_cambios_{id_cooperacion}.json' if id_cooperacion != 'global' else 'historial_cambios.json'
+        self.archivo_historial = os.path.join(RUTA_SEGURA, nombre_archivo)
         self.historial = self._cargar_historial()
     
     def _cargar_historial(self):
@@ -30,21 +39,20 @@ class GestorHistorial:
     def _guardar_historial(self):
         """Guarda el historial en archivo"""
         try:
+            # Crear directorio si no existe
+            if not os.path.exists(os.path.dirname(self.archivo_historial)):
+                os.makedirs(os.path.dirname(self.archivo_historial))
+            
             # Mantener solo los ultimos 10000 registros para no agrandar demasiado el archivo
             historial_limitado = self.historial[-10000:]
             
+            # Guardar con flush para asegurar que se escribe inmediatamente
             with open(self.archivo_historial, 'w', encoding='utf-8') as f:
                 json.dump(historial_limitado, f, indent=2, ensure_ascii=False)
+                f.flush()  # Asegurar que se escribe al disco
             
-            # Ocultar archivo en Windows
-            try:
-                import ctypes
-                FILE_ATTRIBUTE_HIDDEN = 0x02
-                ctypes.windll.kernel32.SetFileAttributesW(self.archivo_historial, FILE_ATTRIBUTE_HIDDEN)
-            except:
-                pass
         except Exception as e:
-            registrar_error('historial', 'guardar_historial', str(e))
+            registrar_error('historial', '_guardar_historial', str(e))
     
     def registrar_cambio(self, tipo, entidad, id_entidad, cambios, usuario='Sistema'):
         """
@@ -66,6 +74,7 @@ class GestorHistorial:
                 'tipo': tipo,
                 'entidad': entidad,
                 'id_entidad': id_entidad,
+                'id_cooperacion': self.id_cooperacion,  # Agregar ID de cooperación
                 'usuario': usuario,
                 'cambios': cambios
             }

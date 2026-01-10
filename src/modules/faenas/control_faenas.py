@@ -13,7 +13,8 @@ if __name__ == "__main__":
     if proyecto_raiz not in sys.path:
         sys.path.insert(0, proyecto_raiz)
 
-from src.ui.tema_moderno import TEMA_CLARO, TEMA_OSCURO, FUENTES, ESPACIADO, ICONOS
+from src.ui.estilos_globales import TEMA_GLOBAL
+from src.ui.tema_moderno import FUENTES, ESPACIADO, ICONOS
 from src.ui.ui_moderna import BarraSuperior, PanelModerno, BotonModerno
 from src.auth.seguridad import seguridad
 from src.core.logger import registrar_operacion, registrar_error
@@ -36,13 +37,12 @@ class SistemaFaenas:
         self.root.title("Registro de Faenas Comunitarias")
         self.root.state('zoomed')
 
-        self.tema_actual = 'claro'
-        self.tema_visual = TEMA_CLARO
+        self.tema_visual = TEMA_GLOBAL
 
         self.faenas = []
         self.faena_seleccionada = None
         self.habitantes_cache = []
-        self.gestor_historial = GestorHistorial()
+        self.gestor_historial = GestorHistorial(id_cooperacion='faenas')  # Historial independiente para faenas
         self.default_year = default_year
 
         self.cargar_datos()
@@ -61,8 +61,6 @@ class SistemaFaenas:
                 datos = seguridad.descifrar_archivo(ARCHIVO_FAENAS, PASSWORD_CIFRADO)
                 if datos:
                     self.faenas = datos.get('faenas', [])
-                    self.tema_actual = datos.get('tema', 'claro')
-                    self.tema_visual = TEMA_CLARO if self.tema_actual == 'claro' else TEMA_OSCURO
         except Exception as e:
             registrar_error('faenas', 'cargar_datos', str(e))
             self.faenas = []
@@ -71,7 +69,6 @@ class SistemaFaenas:
         try:
             datos = {
                 'faenas': self.faenas,
-                'tema': self.tema_actual,
                 'fecha_guardado': datetime.now().isoformat()
             }
             seguridad.cifrar_archivo(datos, ARCHIVO_FAENAS, PASSWORD_CIFRADO)
@@ -139,10 +136,8 @@ class SistemaFaenas:
     def configurar_interfaz(self):
         self.root.configure(bg=self.tema_visual['bg_principal'])
 
-        self.barra = BarraSuperior(self.root, self.usuario_actual, self.toggle_tema)
+        self.barra = BarraSuperior(self.root, self.usuario_actual, lambda: None)
         self.barra.pack(fill=tk.X)
-        self.barra.update_button_text(f"{ICONOS['luna']} Noche" if self.tema_actual == 'claro' else f"{ICONOS['sol']} Día")
-
         main = tk.Frame(self.root, bg=self.tema_visual['bg_principal'])
         main.pack(fill=tk.BOTH, expand=True, padx=ESPACIADO['lg'], pady=ESPACIADO['lg'])
         main.columnconfigure(0, weight=1)
@@ -967,14 +962,6 @@ class SistemaFaenas:
             print(f"Error validando fecha: {e}")
             return True  # Por defecto permitir
     
-    def toggle_tema(self):
-        self.tema_actual = 'oscuro' if self.tema_actual == 'claro' else 'claro'
-        self.tema_visual = TEMA_CLARO if self.tema_actual == 'claro' else TEMA_OSCURO
-        self.root.configure(bg=self.tema_visual['bg_principal'])
-        self.barra.actualizar_tema(self.tema_visual)
-        self.barra.update_button_text(f"{ICONOS['luna']} Noche" if self.tema_actual == 'claro' else f"{ICONOS['sol']} Día")
-        self.guardar_datos()
-
     @staticmethod
     def _formato_fecha(fecha_iso):
         try:
