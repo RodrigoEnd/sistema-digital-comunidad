@@ -670,16 +670,37 @@ class SistemaControlPagos:
         
         # ===== CONTENEDOR PRINCIPAL CON PADDING =====
         print("[CONFIGURAR_INTERFAZ] Creando content_container...")
-        content_container = tk.Frame(main_frame, bg=tema_visual['bg_principal'])
-        content_container.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), 
+        scroll_container = tk.Frame(main_frame, bg=tema_visual['bg_principal'])
+        scroll_container.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), 
                               padx=ESPACIADO['lg'], pady=ESPACIADO['lg'])
+        scroll_container.columnconfigure(0, weight=1)
+        scroll_container.rowconfigure(0, weight=1)
+
+        canvas = tk.Canvas(scroll_container, bg=tema_visual['bg_principal'], highlightthickness=0)
+        canvas.grid(row=0, column=0, sticky='nsew')
+        scrollbar = ttk.Scrollbar(scroll_container, orient=tk.VERTICAL, command=canvas.yview)
+        scrollbar.grid(row=0, column=1, sticky='ns')
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        content_container = tk.Frame(canvas, bg=tema_visual['bg_principal'])
+        window_id = canvas.create_window((0, 0), window=content_container, anchor='nw')
+
+        # Ajuste de scroll para ver toda la pantalla y mantener ancho completo
+        content_container.bind('<Configure>', lambda e: canvas.configure(scrollregion=canvas.bbox('all')))
+        canvas.bind('<Configure>', lambda e: canvas.itemconfig(window_id, width=e.width))
+        
+        # Scroll del canvas solo cuando el cursor está sobre él
+        def _on_canvas_scroll(event):
+            canvas.yview_scroll(int(-1 * (event.delta / 120)), 'units')
+        canvas.bind('<MouseWheel>', _on_canvas_scroll)
+
         content_container.columnconfigure(0, weight=1)
         content_container.columnconfigure(1, weight=1)  # Segunda columna para diseño lado a lado
         # Configurar todas las filas para que se expandan correctamente
         content_container.rowconfigure(0, weight=0)  # Info panel
-        content_container.rowconfigure(1, weight=0)  # Search y Actions (lado a lado)
-        content_container.rowconfigure(2, weight=0)  # Total panel (oculto)
-        content_container.rowconfigure(3, weight=1)  # Tabla panel (expandible)
+        content_container.rowconfigure(1, weight=0)  # Acciones
+        content_container.rowconfigure(2, weight=1)  # Tabla panel (expandible)
+        content_container.rowconfigure(3, weight=0)  # Fila libre/reservada
         
         # ===== PANEL DE INFORMACIÓN (CARD MODERNO COLAPSABLE) =====
         from src.ui.ui_moderna import PanelModerno
@@ -689,16 +710,10 @@ class SistemaControlPagos:
         self.info_panel.titulo_label.bind('<Button-1>', lambda e: self.toggle_panel(self.info_panel))
         self.info_panel.titulo_label.config(cursor='hand2')
         
-        # ===== PANEL DE BÚSQUEDA (CARD MODERNO COLAPSABLE - IZQUIERDA) =====
-        self.search_panel = PanelModerno(content_container, titulo="▼ 🔍 Búsqueda y Filtros", tema=tema_visual)
-        self.search_panel.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, ESPACIADO['md']), padx=(0, ESPACIADO['sm']))
-        # Hacer el título clickeable para colapsar
-        self.search_panel.titulo_label.bind('<Button-1>', lambda e: self.toggle_panel(self.search_panel))
-        self.search_panel.titulo_label.config(cursor='hand2')
-        
-        # ===== PANEL DE ACCIONES (CARD MODERNO COLAPSABLE - DERECHA) =====
+        # ===== PANEL DE ACCIONES (CARD MODERNO COLAPSABLE) =====
+        # Al integrar la búsqueda en el panel de la lista, este panel ocupa todo el ancho
         self.actions_panel = PanelModerno(content_container, titulo="▼ ⚡ Acciones Rápidas", tema=tema_visual)
-        self.actions_panel.grid(row=1, column=1, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, ESPACIADO['md']), padx=(ESPACIADO['sm'], 0))
+        self.actions_panel.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, ESPACIADO['md']))
         # Hacer el título clickeable para colapsar
         self.actions_panel.titulo_label.bind('<Button-1>', lambda e: self.toggle_panel(self.actions_panel))
         self.actions_panel.titulo_label.config(cursor='hand2')
@@ -838,33 +853,34 @@ class SistemaControlPagos:
                                               command=self.toggle_cifras_visibles)
         self.btn_toggle_cifras.pack()
         
-        search_content = self.search_panel.content_frame
-        
-        # Campo de búsqueda mejorado
-        search_input_frame = tk.Frame(search_content, bg=tema_visual.get('card_bg', tema_visual['bg_secundario']))
-        search_input_frame.pack(fill=tk.X, pady=(0, ESPACIADO['md']))
-        
+        # ===== TABLA MODERNA =====
+        self.table_panel = PanelModerno(content_container, titulo="📋 Lista de Personas", tema=tema_visual)
+        self.table_panel.grid(row=2, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S))
+
+        # Agregar barra de búsqueda integrada dentro del mismo panel de la lista
+        table_header = self.table_panel.card.winfo_children()[0]  # header_frame del card
+        controles_header = tk.Frame(table_header, bg=tema_visual.get('card_bg', tema_visual['bg_secundario']))
+        controles_header.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=ESPACIADO['lg'], pady=(ESPACIADO['lg'], 0))
+        controles_header.columnconfigure(0, weight=1)  # La búsqueda se expande
+
         from src.ui.ui_componentes_extra import SearchBox
-        self.search_box = SearchBox(search_input_frame, placeholder="Buscar por nombre, folio o estado...",
-                              tema=tema_visual, callback=lambda _: self.buscar_tiempo_real())
-        self.search_box.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, ESPACIADO['md']))
-        
-        # Vincular eventos de búsqueda
+        self.search_box = SearchBox(controles_header, placeholder="Buscar por nombre, folio o estado...",
+                        tema=tema_visual, callback=lambda _: self.buscar_tiempo_real())
+        self.search_box.grid(row=0, column=0, sticky=(tk.W, tk.E), padx=(0, ESPACIADO['md']))
         self.search_box.entry.bind('<KeyRelease>', lambda e: self.buscar_tiempo_real())
-        
-        BotonModerno(search_input_frame, f"{ICONOS['cerrar']} Limpiar", tema=tema_visual, tipo='secondary',
-                    command=self.limpiar_busqueda).pack(side=tk.LEFT, padx=(0, ESPACIADO['sm']))
-        BotonModerno(search_input_frame, f"{ICONOS['filtrar']} Búsqueda Avanzada", tema=tema_visual, tipo='ghost',
-                    command=self.abrir_busqueda_avanzada).pack(side=tk.LEFT)
-        
-        # Checkboxes de visibilidad
-        visibility_frame = tk.Frame(search_content, bg=tema_visual.get('card_bg', tema_visual['bg_secundario']))
-        visibility_frame.pack(anchor=tk.W)
-        
-        ttk.Checkbutton(visibility_frame, text="Mostrar folio", variable=self.folio_visible,
-                       command=self.actualizar_visibilidad_columnas).pack(side=tk.LEFT, padx=(0, ESPACIADO['lg']))
-        ttk.Checkbutton(visibility_frame, text="Mostrar nombre", variable=self.nombre_visible,
-                       command=self.actualizar_visibilidad_columnas).pack(side=tk.LEFT)
+
+        BotonModerno(controles_header, f"{ICONOS['cerrar']} Limpiar", tema=tema_visual, tipo='secondary',
+                 command=self.limpiar_busqueda).grid(row=0, column=1, padx=(0, ESPACIADO['sm']))
+        BotonModerno(controles_header, f"{ICONOS['filtrar']} Búsqueda Avanzada", tema=tema_visual, tipo='ghost',
+                 command=self.abrir_busqueda_avanzada).grid(row=0, column=2, padx=(0, ESPACIADO['sm']))
+
+        # Controles de visibilidad integrados al header
+        checks_container = tk.Frame(controles_header, bg=tema_visual.get('card_bg', tema_visual['bg_secundario']))
+        checks_container.grid(row=0, column=3, padx=(ESPACIADO['md'], 0))
+        ttk.Checkbutton(checks_container, text="Mostrar folio", variable=self.folio_visible,
+                command=self.actualizar_visibilidad_columnas).pack(side=tk.LEFT, padx=(0, ESPACIADO['sm']))
+        ttk.Checkbutton(checks_container, text="Mostrar nombre", variable=self.nombre_visible,
+                command=self.actualizar_visibilidad_columnas).pack(side=tk.LEFT)
         
         actions_content = self.actions_panel.content_frame
         
@@ -896,17 +912,14 @@ class SistemaControlPagos:
         BotonModerno(btn_row2, f"{ICONOS['guardar']} Crear Backup", tema=tema_visual, tipo='ghost',
                     command=self.crear_backup).pack(side=tk.LEFT, padx=(0, ESPACIADO['sm']))
         
-        # ===== TABLA MODERNA =====
-        self.table_panel = PanelModerno(content_container, titulo="📋 Lista de Personas", tema=tema_visual)
-        self.table_panel.grid(row=2, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S))
-        
-        # Agregar botón de pantalla completa en el título
+        # Botón de pantalla completa en la esquina superior derecha del header
         titulo_frame = self.table_panel.card.winfo_children()[0]  # El header_frame
         btn_fullscreen = tk.Button(titulo_frame, text="⛶", font=('Arial', 14), 
-                                   bg=tema_visual.get('card_bg', tema_visual['bg_secundario']),
-                                   fg=tema_visual['accent_primary'], relief=tk.FLAT,
-                                   cursor='hand2', command=self.toggle_fullscreen_tabla)
-        btn_fullscreen.pack(side=tk.RIGHT, padx=ESPACIADO['md'])
+                       bg=tema_visual.get('card_bg', tema_visual['bg_secundario']),
+                       fg=tema_visual['accent_primary'], relief=tk.FLAT,
+                       cursor='hand2', command=self.toggle_fullscreen_tabla)
+        btn_fullscreen.place(relx=1.0, rely=0.0, x=-ESPACIADO['lg'], y=ESPACIADO['lg'], anchor='ne')
+        btn_fullscreen.lift()  # Asegurar que quede encima del resto del header
         
         table_content = self.table_panel.content_frame
         table_content.columnconfigure(0, weight=1)
@@ -1043,20 +1056,21 @@ class SistemaControlPagos:
             # Ocultar otros paneles
             if hasattr(self, 'info_panel') and self.info_panel.winfo_ismapped():
                 self.info_panel.grid_remove()
-            if hasattr(self, 'search_panel') and self.search_panel.winfo_ismapped():
-                self.search_panel.grid_remove()
             if hasattr(self, 'actions_panel') and self.actions_panel.winfo_ismapped():
                 self.actions_panel.grid_remove()
             if hasattr(self, 'total_frame') and self.total_frame.winfo_ismapped():
                 self.total_frame.grid_remove()
+            # Ocultar barra superior para ganar más espacio
+            if hasattr(self, 'barra_superior') and self.barra_superior.frame.winfo_ismapped():
+                self.barra_superior.frame.grid_remove()
         else:
             # Mostrar paneles nuevamente
             if hasattr(self, 'info_panel'):
                 self.info_panel.grid()
-            if hasattr(self, 'search_panel'):
-                self.search_panel.grid()
             if hasattr(self, 'actions_panel'):
                 self.actions_panel.grid()
+            if hasattr(self, 'barra_superior'):
+                self.barra_superior.frame.grid(row=0, column=0, sticky=(tk.W, tk.E))
         
     def sincronizar_con_censo(self, nombre):
         """Sincronizar persona con la base de datos de censo - buscar folio permanente"""

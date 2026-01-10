@@ -50,7 +50,7 @@ class SistemaFaenas:
 
         self.configurar_interfaz()
         self.actualizar_listado_faenas()
-        self.actualizar_resumen_anual()
+        self.actualizar_resumen_anual()  # Llamar DESPUÉS de configurar_interfaz()
 
     # ------------------------------------------------------------------
     # Datos
@@ -138,8 +138,31 @@ class SistemaFaenas:
 
         self.barra = BarraSuperior(self.root, self.usuario_actual, lambda: None)
         self.barra.pack(fill=tk.X)
-        main = tk.Frame(self.root, bg=self.tema_visual['bg_principal'])
-        main.pack(fill=tk.BOTH, expand=True, padx=ESPACIADO['lg'], pady=ESPACIADO['lg'])
+
+        # Contenedor con canvas para permitir scroll vertical de todo el layout
+        scroll_container = tk.Frame(self.root, bg=self.tema_visual['bg_principal'])
+        scroll_container.pack(fill=tk.BOTH, expand=True, padx=ESPACIADO['lg'], pady=ESPACIADO['lg'])
+        scroll_container.columnconfigure(0, weight=1)
+        scroll_container.rowconfigure(0, weight=1)
+
+        canvas = tk.Canvas(scroll_container, bg=self.tema_visual['bg_principal'], highlightthickness=0)
+        canvas.grid(row=0, column=0, sticky='nsew')
+        scrollbar = ttk.Scrollbar(scroll_container, orient=tk.VERTICAL, command=canvas.yview)
+        scrollbar.grid(row=0, column=1, sticky='ns')
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        main = tk.Frame(canvas, bg=self.tema_visual['bg_principal'])
+        window_id = canvas.create_window((0, 0), window=main, anchor='nw')
+
+        # Ajustar región de scroll y ancho para evitar cortes laterales
+        main.bind('<Configure>', lambda e: canvas.configure(scrollregion=canvas.bbox('all')))
+        canvas.bind('<Configure>', lambda e: canvas.itemconfig(window_id, width=e.width))
+        
+        # Scroll del canvas solo cuando el cursor está sobre él
+        def _on_canvas_scroll(event):
+            canvas.yview_scroll(int(-1 * (event.delta / 120)), 'units')
+        canvas.bind('<MouseWheel>', _on_canvas_scroll)
+
         main.columnconfigure(0, weight=1)
         main.columnconfigure(1, weight=1)
         main.rowconfigure(1, weight=1)
@@ -291,12 +314,16 @@ class SistemaFaenas:
         scroll_y.grid(row=2, column=1, sticky='ns')
 
     def _crear_panel_resumen(self, parent):
-        panel = PanelModerno(parent, titulo="Resumen anual de puntos", tema=self.tema_visual)
-        panel.grid(row=2, column=0, columnspan=2, sticky='nsew', pady=(ESPACIADO['lg'], 0))
-        panel.content_frame.columnconfigure(0, weight=1)
-        panel.content_frame.rowconfigure(1, weight=1)
+        self.panel_resumen = PanelModerno(parent, titulo="▼ 📊 Resumen anual de puntos", tema=self.tema_visual)
+        self.panel_resumen.grid(row=2, column=0, columnspan=2, sticky='nsew', pady=(ESPACIADO['lg'], 0))
+        self.panel_resumen.content_frame.columnconfigure(0, weight=1)
+        self.panel_resumen.content_frame.rowconfigure(1, weight=1)
+        
+        # Hacer el título clickeable para colapsar/expandir
+        self.panel_resumen.titulo_label.bind('<Button-1>', lambda e: self._toggle_panel_resumen(self.panel_resumen))
+        self.panel_resumen.titulo_label.config(cursor='hand2')
 
-        filtros = tk.Frame(panel.content_frame, bg=self.tema_visual['bg_secundario'])
+        filtros = tk.Frame(self.panel_resumen.content_frame, bg=self.tema_visual['bg_secundario'])
         filtros.grid(row=0, column=0, sticky='we', pady=(0, ESPACIADO['sm']))
 
         tk.Label(filtros, text="Año", font=FUENTES['subtitulo'],
@@ -320,7 +347,7 @@ class SistemaFaenas:
         self.resumen_buscar_var.trace_add('write', lambda *args: self.actualizar_resumen_anual())
 
         cols = ('folio', 'nombre', 'puntos')
-        self.tree_resumen = ttk.Treeview(panel.content_frame, columns=cols, show='headings', height=8)
+        self.tree_resumen = ttk.Treeview(self.panel_resumen.content_frame, columns=cols, show='headings', height=8)
         self.tree_resumen.heading('folio', text='Folio')
         self.tree_resumen.heading('nombre', text='Nombre')
         self.tree_resumen.heading('puntos', text='Puntos')
@@ -328,7 +355,7 @@ class SistemaFaenas:
         self.tree_resumen.column('nombre', width=260)
         self.tree_resumen.column('puntos', width=120, anchor='center')
 
-        scroll_y = ttk.Scrollbar(panel.content_frame, orient=tk.VERTICAL, command=self.tree_resumen.yview)
+        scroll_y = ttk.Scrollbar(self.panel_resumen.content_frame, orient=tk.VERTICAL, command=self.tree_resumen.yview)
         self.tree_resumen.configure(yscrollcommand=scroll_y.set)
 
         self.tree_resumen.grid(row=1, column=0, sticky='nsew')
@@ -897,6 +924,9 @@ class SistemaFaenas:
                 self.on_select_faena()
 
     def actualizar_resumen_anual(self):
+        if not hasattr(self, 'tree_resumen'):
+            return  # El árbol aún no existe
+            
         self.tree_resumen.delete(*self.tree_resumen.get_children())
         try:
             anio = int(self.anio_var.get()) if hasattr(self, 'anio_var') else datetime.now().year
@@ -909,6 +939,7 @@ class SistemaFaenas:
             if str(anio) not in self.anio_combo['values']:
                 self.anio_var.set(str(datetime.now().year))
                 anio = datetime.now().year
+        
         puntos = {}
         for faena in self.faenas:
             if self._anio_de_faena(faena) != anio:
@@ -928,17 +959,36 @@ class SistemaFaenas:
             puntos = {k: v for k, v in puntos.items() if criterio in (v.get('folio', '').lower()) or criterio in (v.get('nombre', '').lower())}
 
         if not puntos:
+            # Mostrar mensaje de no hay datos
             return
+        
         max_puntos = max(v['puntos'] for v in puntos.values()) or 1
+        
+        # Configurar tags con colores antes de insertar
         for data in sorted(puntos.values(), key=lambda x: (-x['puntos'], x['nombre'])):
             color = self._color_por_puntaje(data['puntos'], max_puntos)
-            tag = f"color-{data['folio']}-{data['puntos']}"
+            tag = f"color-{data['folio']}"
             self.tree_resumen.tag_configure(tag, background=color, foreground='#ffffff' if data['puntos'] >= max_puntos * 0.5 else '#1a1a1a')
             self.tree_resumen.insert('', tk.END, values=(data['folio'], data['nombre'], f"{data['puntos']:.1f}"), tags=(tag,))
 
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+    def _toggle_panel_resumen(self, panel):
+        """Colapsa o expande el panel de resumen anual"""
+        if panel.content_frame.winfo_ismapped():
+            panel.content_frame.pack_forget()
+            titulo_actual = panel.titulo_label.cget('text')
+            nuevo_titulo = titulo_actual.replace('▼', '▶')
+            panel.titulo_label.config(text=nuevo_titulo)
+        else:
+            panel.content_frame.pack(fill=tk.BOTH, expand=True, padx=ESPACIADO['lg'], pady=ESPACIADO['lg'])
+            titulo_actual = panel.titulo_label.cget('text')
+            nuevo_titulo = titulo_actual.replace('▶', '▼')
+            panel.titulo_label.config(text=nuevo_titulo)
+            # Actualizar resumen cuando se expande
+            self.actualizar_resumen_anual()
+    
     def _puede_editar_faena(self):
         """
         Valida si una faena puede ser editada.

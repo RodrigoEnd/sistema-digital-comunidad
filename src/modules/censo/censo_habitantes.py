@@ -100,11 +100,14 @@ class SistemaCensoHabitantes:
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
         main_frame.columnconfigure(0, weight=1)
-        main_frame.rowconfigure(2, weight=1)
+        # La fila 1 contiene ahora el cuadro de lista+búsqueda
+        main_frame.rowconfigure(1, weight=1)
         
         # ===== ENCABEZADO =====
         header_frame = ttk.LabelFrame(main_frame, text="Censo de Habitantes", padding="10")
         header_frame.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
+        # Guardar referencia para poder ocultarlo/mostrarlo al maximizar la lista
+        self.header_frame = header_frame
         
         ttk.Label(header_frame, text="Sistema de Registro de Habitantes del Pueblo", 
              font=FUENTES['titulo']).grid(row=0, column=0, columnspan=3, pady=5)
@@ -147,29 +150,37 @@ class SistemaCensoHabitantes:
         # Tooltip
         self.tooltip_label = None
         
-        # ===== BUSQUEDA =====
-        search_frame = ttk.LabelFrame(main_frame, text="Busqueda", padding="10")
-        search_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
-        
-        ttk.Label(search_frame, text="Buscar por nombre o folio:").pack(side=tk.LEFT, padx=5)
+        # ===== TABLA + BUSQUEDA EN EL MISMO CUADRO =====
+        table_frame = ttk.LabelFrame(main_frame, text="Listado de Habitantes", padding="8")
+        table_frame.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        table_frame.columnconfigure(0, weight=1)
+        table_frame.rowconfigure(1, weight=1)
+
+        # Toolbar de búsqueda y acciones dentro del mismo cuadro de la lista
+        toolbar = ttk.Frame(table_frame)
+        toolbar.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=(0, 8))
+        toolbar.columnconfigure(1, weight=1)
+
+        ttk.Label(toolbar, text="Buscar por nombre o folio:").grid(row=0, column=0, sticky=tk.W, padx=(0,5))
         self.search_var = tk.StringVar()
         self.search_var.trace('w', lambda *args: self.buscar_tiempo_real())
-        search_entry = ttk.Entry(search_frame, textvariable=self.search_var, width=50)
-        search_entry.pack(side=tk.LEFT, padx=5)
-        
-        ttk.Button(search_frame, text="Limpiar", command=self.limpiar_busqueda).pack(side=tk.LEFT, padx=5)
-        ttk.Button(search_frame, text="Agregar Habitante", command=self.agregar_habitante).pack(side=tk.LEFT, padx=20)
-        ttk.Button(search_frame, text="Actualizar Lista", command=self.cargar_habitantes).pack(side=tk.LEFT, padx=5)
-        ttk.Checkbutton(search_frame, text="Mostrar nombre", variable=self.nombre_visible,
+        search_entry = ttk.Entry(toolbar, textvariable=self.search_var, width=50)
+        search_entry.grid(row=0, column=1, sticky=(tk.W, tk.E))
+
+        acciones = ttk.Frame(toolbar)
+        acciones.grid(row=0, column=2, sticky=tk.E, padx=(8,0))
+        ttk.Button(acciones, text="Limpiar", command=self.limpiar_busqueda).pack(side=tk.LEFT, padx=5)
+        ttk.Button(acciones, text="Agregar Habitante", command=self.agregar_habitante).pack(side=tk.LEFT, padx=5)
+        ttk.Button(acciones, text="Actualizar Lista", command=self.cargar_habitantes).pack(side=tk.LEFT, padx=5)
+
+        # Controles de visibilidad y botón de tamaño dentro del mismo cuadro
+        controles = ttk.Frame(toolbar)
+        controles.grid(row=1, column=0, columnspan=3, sticky=tk.E, pady=(6,0))
+        ttk.Checkbutton(controles, text="Mostrar nombre", variable=self.nombre_visible,
                 command=self.actualizar_visibilidad_columnas).pack(side=tk.RIGHT, padx=5)
-        ttk.Checkbutton(search_frame, text="Mostrar folio", variable=self.folio_visible,
+        ttk.Checkbutton(controles, text="Mostrar folio", variable=self.folio_visible,
                 command=self.actualizar_visibilidad_columnas).pack(side=tk.RIGHT, padx=5)
-        
-        # ===== TABLA =====
-        table_frame = ttk.Frame(main_frame)
-        table_frame.grid(row=2, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
-        table_frame.columnconfigure(0, weight=1)
-        table_frame.rowconfigure(0, weight=1)
+        ttk.Button(controles, text="Maximizar Lista", command=self.toggle_tamano_lista).pack(side=tk.RIGHT, padx=10)
         
         # Scrollbars
         scrollbar_y = ttk.Scrollbar(table_frame, orient=tk.VERTICAL)
@@ -192,9 +203,9 @@ class SistemaCensoHabitantes:
         self.tree.column('fecha_registro', width=120, anchor=tk.CENTER)
         self.tree.column('activo', width=100, anchor=tk.CENTER)
         
-        self.tree.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
-        scrollbar_y.grid(row=0, column=1, sticky=(tk.N, tk.S))
-        scrollbar_x.grid(row=1, column=0, sticky=(tk.W, tk.E))
+        self.tree.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        scrollbar_y.grid(row=1, column=1, sticky=(tk.N, tk.S))
+        scrollbar_x.grid(row=2, column=0, sticky=(tk.W, tk.E))
         
         scrollbar_y.config(command=self.tree.yview)
         scrollbar_x.config(command=self.tree.xview)
@@ -204,6 +215,29 @@ class SistemaCensoHabitantes:
         
         # Ajustar visibilidad inicial
         self.actualizar_visibilidad_columnas()
+
+        # Estado de tamaño de lista (maximizada o normal)
+        self.lista_maximizada = False
+
+    def toggle_tamano_lista(self):
+        """Alterna entre vista normal y lista maximizada.
+        En modo maximizado, se oculta el encabezado para dar más espacio
+        a la lista; la barra de búsqueda se mantiene visible dentro del cuadro."""
+        try:
+            if not self.lista_maximizada:
+                # Ocultar encabezado y dar más espacio a la lista
+                if hasattr(self, 'header_frame'):
+                    self.header_frame.grid_remove()
+                # Asegurar que la ventana esté maximizada
+                self.root.state('zoomed')
+                self.lista_maximizada = True
+            else:
+                # Restaurar encabezado
+                if hasattr(self, 'header_frame'):
+                    self.header_frame.grid()
+                self.lista_maximizada = False
+        except Exception as e:
+            print(f"Error al cambiar tamaño de lista: {e}")
     
     def cargar_habitantes(self):
         """Cargar todos los habitantes desde la API"""
