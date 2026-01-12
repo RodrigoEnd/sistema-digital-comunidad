@@ -1,28 +1,37 @@
 """
 Configuracion centralizada del sistema
 Contiene todas las constantes y configuraciones globales
+Usa variables de entorno para valores sensibles (.env)
 """
 
 import os
 
+# Intentar cargar dotenv, si no está disponible usar valores por defecto
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    # dotenv no instalado, usar valores hardcoded
+    pass
+
 # API
-API_URL = "http://127.0.0.1:5000/api"
-API_PORT = 5000
-API_HOST = "127.0.0.1"
+API_URL = os.getenv("API_URL", "http://127.0.0.1:5000/api")
+API_PORT = int(os.getenv("API_PORT", "5000"))
+API_HOST = os.getenv("API_HOST", "127.0.0.1")
 
 # Modo offline: si es True no se requiere la API para operar
-MODO_OFFLINE = False
+MODO_OFFLINE = os.getenv("MODO_OFFLINE", "False").lower() == "true"
 
 # Seguridad
-PASSWORD_CIFRADO = "SistemaComunidad2026"
-SALT_CIFRADO = b'SistemaComunidad2026Salt'
-BCRYPT_ROUNDS = 12
+PASSWORD_CIFRADO = os.getenv("PASSWORD_CIFRADO", "SistemaComunidad2026")
+SALT_CIFRADO = os.getenv("SALT_CIFRADO", "SistemaComunidad2026Salt").encode()
+BCRYPT_ROUNDS = int(os.getenv("BCRYPT_ROUNDS", "12"))
 
 # Base de datos
-ARCHIVO_HABITANTES = "base_datos_habitantes.json"
-ARCHIVO_PAGOS = "datos_pagos.json"
-ARCHIVO_FAENAS = "datos_faenas.json"
-ARCHIVO_CONFIG = "config_usuario.json"
+ARCHIVO_HABITANTES = os.getenv("ARCHIVO_HABITANTES", "base_datos_habitantes.json")
+ARCHIVO_PAGOS = os.getenv("ARCHIVO_PAGOS", "datos_pagos.json")
+ARCHIVO_FAENAS = os.getenv("ARCHIVO_FAENAS", "datos_faenas.json")
+ARCHIVO_CONFIG = os.getenv("ARCHIVO_CONFIG", "config_usuario.json")
 
 # Sistema de archivos
 def obtener_ruta_segura():
@@ -33,7 +42,7 @@ def obtener_ruta_segura():
 RUTA_SEGURA = obtener_ruta_segura()
 
 # Interfaz
-VENTANA_MODO = 'zoomed'  # 'zoomed' para pantalla completa en Windows
+VENTANA_MODO = os.getenv("VENTANA_MODO", "zoomed")  # 'zoomed' para pantalla completa en Windows
 
 # Temas
 TEMAS = {
@@ -78,16 +87,6 @@ TAMAÑOS_LETRA = {
 
 TAMAÑO_DEFECTO = 'normal'
 
-# Sistema de archivos
-def obtener_ruta_segura():
-    """Obtiene la ruta segura en AppData del usuario"""
-    appdata = os.getenv('LOCALAPPDATA')
-    return os.path.join(appdata, 'SistemaComunidad')
-
-RUTA_SEGURA = obtener_ruta_segura()
-
-RUTA_SEGURA = obtener_ruta_segura()
-
 # Logging
 CARPETA_LOGS = os.path.join(RUTA_SEGURA, 'logs')
 ARCHIVO_LOG = os.path.join(CARPETA_LOGS, 'sistema.log')
@@ -113,3 +112,18 @@ FORMATO_FECHA_EXPORT = '%d/%m/%Y'
 # Sistema de cooperaciones
 MONTO_COOPERACION_DEFECTO = 100.0
 PROYECTO_DEFECTO = "Proyecto Comunitario 2026"
+
+# Sistema de faenas
+DIAS_LIMITE_EDICION_FAENA = 7  # Días máximos para editar una faena después de su fecha
+PESO_FAENA_MINIMO = 1
+PESO_FAENA_MAXIMO = 10
+PESO_FAENA_DEFECTO = 5
+PESO_SUSTITUCION_HABITANTE = 0.9  # 90% para quien contrata a un habitante
+PESO_SUSTITUCION_EXTERNO = 1.0  # 100% para quien contrata a externo
+PESO_TRABAJADOR_CONTRATADO = 1.0  # 100% para el habitante que fue contratado
+
+# Formato de hora por defecto para faenas
+HORA_INICIO_DEFECTO = '9'
+HORA_INICIO_AMPM_DEFECTO = 'AM'
+HORA_FIN_DEFECTO = '1'
+HORA_FIN_AMPM_DEFECTO = 'PM'
