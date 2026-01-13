@@ -20,32 +20,10 @@ class BaseDatos:
             self.generar_datos_prueba()
     
     def generar_datos_prueba(self):
-        """Generar 10 nombres de muestra para pruebas iniciales"""
-        nombres_muestra = [
-            "Juan Garcia Lopez",
-            "Maria Rodriguez Martinez",
-            "Pedro Hernandez Cruz",
-            "Ana Gonzalez Flores",
-            "Luis Martinez Gomez",
-            "Carmen Lopez Sanchez",
-            "Jose Perez Torres",
-            "Rosa Ramirez Morales",
-            "Miguel Diaz Rivera",
-            "Isabel Fernandez Ruiz"
-        ]
-        
-        habitantes_temp = []
-        for i, nombre in enumerate(nombres_muestra, start=1):
-            habitantes_temp.append({
-                'nombre': nombre,
-                'folio': f"HAB-{i:04d}",
-                'fecha_registro': datetime.now().strftime("%d/%m/%Y"),
-                'activo': True
-            })
-        
-        self.habitantes = habitantes_temp
+        """Base de datos vacía - sin datos de prueba"""
+        self.habitantes = []
         self.guardar_datos()
-        print(f"Base de datos creada con {len(self.habitantes)} habitantes de muestra")
+        print("Base de datos inicializada vacía - lista para usar")
     
     def obtener_siguiente_folio(self):
         """Obtener el siguiente folio disponible"""
@@ -79,7 +57,8 @@ class BaseDatos:
             'nombre': nombre,
             'folio': '',
             'fecha_registro': datetime.now().strftime("%d/%m/%Y"),
-            'activo': True
+            'activo': True,
+            'nota': ''
         }
         
         self.habitantes.append(nuevo_habitante)
@@ -122,6 +101,21 @@ class BaseDatos:
     def obtener_todos(self):
         """Obtener todos los habitantes"""
         return self.habitantes
+
+    def actualizar_habitante(self, folio, cambios):
+        """Actualiza campos permitidos de un habitante por folio"""
+        actualizado = None
+        for hab in self.habitantes:
+            if hab.get('folio') == folio:
+                if 'activo' in cambios and cambios['activo'] is not None:
+                    hab['activo'] = bool(cambios['activo'])
+                if 'nota' in cambios and cambios['nota'] is not None:
+                    hab['nota'] = str(cambios['nota'])
+                actualizado = hab
+                break
+        if actualizado:
+            self.guardar_datos()
+        return actualizado
     
     def guardar_datos(self):
         """Guardar datos cifrados en ubicación segura"""
@@ -148,6 +142,9 @@ class BaseDatos:
                 datos = seguridad.descifrar_archivo(self.archivo, self.password)
                 if datos:
                     self.habitantes = datos.get('habitantes', [])
+                    for hab in self.habitantes:
+                        hab.setdefault('activo', True)
+                        hab.setdefault('nota', '')
                 else:
                     self.habitantes = []
             else:

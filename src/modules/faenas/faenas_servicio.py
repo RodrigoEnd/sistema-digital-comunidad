@@ -67,7 +67,8 @@ class FaenasServicio:
                 return {'ok': False, 'error': 'No se pudo obtener habitantes'}
             
             data = resp.json()
-            habitantes = data.get('habitantes', [])
+            habitantes_todos = data.get('habitantes', [])
+            habitantes = [h for h in habitantes_todos if h.get('activo', True)]
             
             # Crear mapeo nombre -> habitante
             nombre_a_hab = {

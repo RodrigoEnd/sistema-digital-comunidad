@@ -286,6 +286,262 @@ class ExportadorExcel:
         except Exception as e:
             registrar_error('exportador', 'exportar_personas_cooperacion', str(e), f'cooperacion: {nombre_cooperacion}')
             return None
-
-# Instancia global
-exportador = ExportadorExcel()
+    
+    def exportar_pagos_completo(self, personas, nombre_cooperacion, historial_cambios=None, nombre_archivo=None):
+        """
+        Exporta reporte completo multi-hoja con resumen, detalle y historial
+        
+        Args:
+            personas (list): Lista de personas con pagos
+            nombre_cooperacion (str): Nombre de la cooperación
+            historial_cambios (list): Historial de cambios (opcional)
+            nombre_archivo (str): Nombre del archivo (opcional)
+            
+        Returns:
+            str: Ruta del archivo creado o None si fallo
+        """
+        try:
+            if nombre_archivo is None:
+                fecha_actual = datetime.now().strftime('%d_%m_%Y_%H%M%S')
+                nombre_archivo = f'Reporte_Completo_{nombre_cooperacion}_{fecha_actual}.xlsx'
+            
+            ruta_archivo = os.path.join(CARPETA_REPORTES, nombre_archivo)
+            
+            wb = Workbook()
+            
+            # === HOJA 1: RESUMEN GENERAL ===
+            ws_resumen = wb.active
+            ws_resumen.title = 'Resumen General'
+            
+            # Título
+            ws_resumen.merge_cells('A1:E1')
+            titulo = ws_resumen['A1']
+            titulo.value = f'RESUMEN GENERAL - {nombre_cooperacion.upper()}'
+            titulo.font = self.estilos['titulo']
+            titulo.fill = self.estilos['fondo_titulo']
+            titulo.alignment = self.estilos['alineacion_centro']
+            ws_resumen.row_dimensions[1].height = 25
+            
+            # Fecha de generación
+            ws_resumen.merge_cells('A2:E2')
+            fecha = ws_resumen['A2']
+            fecha.value = f'Generado: {datetime.now().strftime("%d/%m/%Y %H:%M:%S")}'
+            fecha.font = self.estilos['subtitulo']
+            fecha.alignment = self.estilos['alineacion_derecha']
+            
+            # Estadísticas generales
+            fila = 4
+            stats = [
+                ('Total de personas:', len(personas)),
+                ('Personas activas:', len([p for p in personas if p.get('activo', True)])),
+                ('Personas inactivas:', len([p for p in personas if not p.get('activo', True)])),
+                ('', ''),
+            ]
+            
+            for etiqueta, valor in stats:
+                ws_resumen.cell(row=fila, column=1, value=etiqueta).font = self.estilos['negrita']
+                ws_resumen.cell(row=fila, column=2, value=valor).font = self.estilos['normal']
+                fila += 1
+            
+            # Calcular totales financieros
+            total_recaudado = 0
+            total_esperado = 0
+            personas_al_corriente = 0
+            personas_atrasadas = 0
+            personas_sin_pagar = 0
+            
+            for persona in personas:
+                monto_esperado = persona.get('monto_esperado', 0)
+                pagos = persona.get('pagos', [])
+                total_pagado = sum(p.get('monto', 0) for p in pagos)
+                pendiente = max(0, monto_esperado - total_pagado)
+                
+                total_recaudado += total_pagado
+                total_esperado += monto_esperado
+                
+                if pendiente == 0:
+                    personas_al_corriente += 1
+                elif total_pagado > 0:
+                    personas_atrasadas += 1
+                else:
+                    personas_sin_pagar += 1
+            
+            porcentaje_recaudacion = (total_recaudado / total_esperado * 100) if total_esperado > 0 else 0
+            
+            stats_financieras = [
+                ('Total recaudado:', f'${total_recaudado:.2f}'),
+                ('Total esperado:', f'${total_esperado:.2f}'),
+                ('Porcentaje de recaudación:', f'{porcentaje_recaudacion:.1f}%'),
+                ('', ''),
+                ('Personas al corriente:', personas_al_corriente),
+                ('Personas atrasadas:', personas_atrasadas),
+                ('Personas sin pagar:', personas_sin_pagar),
+            ]
+            
+            for etiqueta, valor in stats_financieras:
+                ws_resumen.cell(row=fila, column=1, value=etiqueta).font = self.estilos['negrita']
+                celda_valor = ws_resumen.cell(row=fila, column=2, value=valor)
+                celda_valor.font = self.estilos['normal']
+                if 'recaudado' in etiqueta.lower() or 'esperado' in etiqueta.lower():
+                    celda_valor.font = self.estilos['negrita']
+                fila += 1
+            
+            ws_resumen.column_dimensions['A'].width = 30
+            ws_resumen.column_dimensions['B'].width = 20
+            
+            # === HOJA 2: DETALLE DE PERSONAS ===
+            ws_detalle = wb.create_sheet(title='Detalle de Personas')
+            
+            # Título
+            ws_detalle.merge_cells('A1:H1')
+            titulo_detalle = ws_detalle['A1']
+            titulo_detalle.value = f'DETALLE DE PERSONAS - {nombre_cooperacion.upper()}'
+            titulo_detalle.font = self.estilos['titulo']
+            titulo_detalle.fill = self.estilos['fondo_titulo']
+            titulo_detalle.alignment = self.estilos['alineacion_centro']
+            ws_detalle.row_dimensions[1].height = 25
+            
+            # Encabezados
+            encabezados = ['Folio', 'Nombre', 'Total Pagado', 'Monto Esperado', 'Pendiente', '% Pagado', 'Estado', 'Último Pago']
+            for col, encabezado in enumerate(encabezados, 1):
+                celda = ws_detalle.cell(row=3, column=col)
+                celda.value = encabezado
+                celda.font = self.estilos['encabezado']
+                celda.fill = self.estilos['fondo_encabezado']
+                celda.alignment = self.estilos['alineacion_centro']
+                celda.border = self.estilos['borde']
+            
+            # Datos
+            fila = 4
+            for persona in personas:
+                folio = persona.get('folio', 'SIN-FOLIO')
+                nombre = persona.get('nombre', '')
+                monto_esperado = persona.get('monto_esperado', 0)
+                pagos = persona.get('pagos', [])
+                total_pagado = sum(p.get('monto', 0) for p in pagos)
+                pendiente = max(0, monto_esperado - total_pagado)
+                porcentaje = (total_pagado / monto_esperado * 100) if monto_esperado > 0 else 0
+                
+                # Estado
+                if pendiente == 0:
+                    estado = 'AL CORRIENTE'
+                    fondo = self.estilos['fondo_pagado']
+                elif total_pagado > 0:
+                    estado = 'ATRASADO'
+                    fondo = self.estilos['fondo_parcial']
+                else:
+                    estado = 'SIN PAGAR'
+                    fondo = self.estilos['fondo_pendiente']
+                
+                # Último pago
+                ultimo_pago = ''
+                if pagos:
+                    ultimo = pagos[-1]
+                    ultimo_pago = f"{ultimo.get('fecha', '')} {ultimo.get('hora', '')} (${ultimo.get('monto', 0):.2f})"
+                
+                valores = [folio, nombre, total_pagado, monto_esperado, pendiente, f'{porcentaje:.1f}%', estado, ultimo_pago]
+                for col, valor in enumerate(valores, 1):
+                    celda = ws_detalle.cell(row=fila, column=col)
+                    celda.value = valor
+                    celda.font = self.estilos['normal']
+                    celda.fill = fondo
+                    celda.border = self.estilos['borde']
+                    
+                    if col in [3, 4, 5]:
+                        celda.alignment = self.estilos['alineacion_derecha']
+                        celda.number_format = '$#,##0.00'
+                    elif col == 6:
+                        celda.alignment = self.estilos['alineacion_derecha']
+                    else:
+                        celda.alignment = self.estilos['alineacion_izquierda']
+                
+                fila += 1
+            
+            # Totales
+            ws_detalle.merge_cells(f'A{fila}:B{fila}')
+            total_label = ws_detalle[f'A{fila}']
+            total_label.value = 'TOTALES'
+            total_label.font = self.estilos['negrita']
+            total_label.fill = self.estilos['fondo_titulo']
+            total_label.alignment = self.estilos['alineacion_derecha']
+            
+            for col in [3, 4, 5]:
+                celda = ws_detalle.cell(row=fila, column=col)
+                if col == 3:
+                    celda.value = total_recaudado
+                elif col == 4:
+                    celda.value = total_esperado
+                elif col == 5:
+                    celda.value = total_esperado - total_recaudado
+                celda.font = self.estilos['negrita']
+                celda.number_format = '$#,##0.00'
+                celda.fill = self.estilos['fondo_titulo']
+                celda.border = self.estilos['borde']
+            
+            ws_detalle.column_dimensions['A'].width = 15
+            ws_detalle.column_dimensions['B'].width = 30
+            ws_detalle.column_dimensions['C'].width = 15
+            ws_detalle.column_dimensions['D'].width = 18
+            ws_detalle.column_dimensions['E'].width = 15
+            ws_detalle.column_dimensions['F'].width = 12
+            ws_detalle.column_dimensions['G'].width = 15
+            ws_detalle.column_dimensions['H'].width = 25
+            
+            # === HOJA 3: HISTORIAL DE PAGOS (si está disponible) ===
+            if historial_cambios:
+                ws_historial = wb.create_sheet(title='Historial de Pagos')
+                
+                # Título
+                ws_historial.merge_cells('A1:F1')
+                titulo_hist = ws_historial['A1']
+                titulo_hist.value = f'HISTORIAL DE PAGOS - {nombre_cooperacion.upper()}'
+                titulo_hist.font = self.estilos['titulo']
+                titulo_hist.fill = self.estilos['fondo_titulo']
+                titulo_hist.alignment = self.estilos['alineacion_centro']
+                ws_historial.row_dimensions[1].height = 25
+                
+                # Encabezados
+                encabezados_hist = ['Fecha', 'Hora', 'Acción', 'Usuario', 'Folio', 'Detalles']
+                for col, encabezado in enumerate(encabezados_hist, 1):
+                    celda = ws_historial.cell(row=3, column=col)
+                    celda.value = encabezado
+                    celda.font = self.estilos['encabezado']
+                    celda.fill = self.estilos['fondo_encabezado']
+                    celda.alignment = self.estilos['alineacion_centro']
+                    celda.border = self.estilos['borde']
+                
+                # Datos del historial
+                fila = 4
+                for cambio in historial_cambios:
+                    fecha = cambio.get('fecha', '')
+                    hora = cambio.get('hora', '')
+                    accion = cambio.get('tipo', '')
+                    usuario = cambio.get('usuario', 'Sistema')
+                    detalles = cambio.get('descripcion', '')
+                    folio = cambio.get('detalles', {}).get('folio', '')
+                    
+                    valores = [fecha, hora, accion, usuario, folio, detalles]
+                    for col, valor in enumerate(valores, 1):
+                        celda = ws_historial.cell(row=fila, column=col)
+                        celda.value = valor
+                        celda.font = self.estilos['normal']
+                        celda.border = self.estilos['borde']
+                        celda.alignment = self.estilos['alineacion_izquierda']
+                    
+                    fila += 1
+                
+                ws_historial.column_dimensions['A'].width = 12
+                ws_historial.column_dimensions['B'].width = 10
+                ws_historial.column_dimensions['C'].width = 20
+                ws_historial.column_dimensions['D'].width = 18
+                ws_historial.column_dimensions['E'].width = 15
+                ws_historial.column_dimensions['F'].width = 40
+            
+            wb.save(ruta_archivo)
+            registrar_operacion('EXPORTACION', 'Exportar reporte completo multi-hoja', 
+                {'cooperacion': nombre_cooperacion, 'archivo': nombre_archivo, 'total_personas': len(personas)})
+            return ruta_archivo
+            
+        except Exception as e:
+            registrar_error('exportador', 'exportar_pagos_completo', str(e), f'cooperacion: {nombre_cooperacion}')
+            return None

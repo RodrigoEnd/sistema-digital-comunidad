@@ -1,0 +1,14 @@
+[MASTER]
+# Pylint configuration file
+
+max-line-length=100
+disable=
+    C0111,  # missing-docstring
+    R0903,  # too-few-public-methods
+    W0212,  # protected-access
+    C0301,  # line-too-long
+
+[DESIGN]
+max-locals=15
+max-branches=12
+max-attributes=7

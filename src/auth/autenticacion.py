@@ -101,9 +101,9 @@ class GestorAutenticacion:
             del sesiones[token]
     
     def _crear_usuario_predeterminado(self):
-        """Crea usuario admin predeterminado en primera instalacion"""
+        """Crea usuario admin predeterminado en primera instalación"""
         usuario = 'admin'
-        contraseña = 'admin123'
+        contraseña = 'admin1234'
         
         hash_contraseña = bcrypt.hashpw(contraseña.encode(), bcrypt.gensalt(rounds=12))
         

@@ -76,6 +76,27 @@ def agregar_habitante():
             'mensaje': mensaje
         }), 400
 
+@app.route('/api/habitantes/<folio>', methods=['PATCH'])
+def actualizar_habitante(folio):
+    """Actualizar estado o nota de un habitante"""
+    datos = request.get_json() or {}
+    cambios = {}
+    if 'activo' in datos:
+        cambios['activo'] = bool(datos.get('activo'))
+    if 'nota' in datos:
+        cambios['nota'] = datos.get('nota')
+
+    actualizado = db.actualizar_habitante(folio, cambios)
+    if actualizado:
+        return jsonify({
+            'success': True,
+            'habitante': actualizado
+        })
+    return jsonify({
+        'success': False,
+        'mensaje': 'Habitante no encontrado'
+    }), 404
+
 @app.route('/api/folio/siguiente', methods=['GET'])
 def obtener_siguiente_folio():
     """Obtener el siguiente folio disponible sin crear habitante"""
@@ -132,28 +153,14 @@ if __name__ == '__main__':
     print("="*50)
     print(f"Total habitantes en base de datos: {len(db.obtener_todos())}")
     print("Endpoints disponibles:")
-    print("  GET  /api/habitantes")
-    print("  GET  /api/habitantes/buscar?q=criterio")
-    print("  GET  /api/habitantes/nombre/<nombre>")
-    print("  POST /api/habitantes")
-    print("  POST /api/sync/verificar")
-    print("  GET  /api/ping")
-    print("="*50)
-    print("Presiona Ctrl+C para detener el servidor\n")
-    
-    app.run(host='127.0.0.1', port=5000, debug=False)
-
-if __name__ == "__main__":
-    print("\n" + "="*50)
-    print("API Local - Sistema Comunidad")
-    print("="*50)
-    print("Iniciando servidor en http://127.0.0.1:5000")
-    print("\nEndpoints disponibles:")
-    print("  GET  /api/habitantes")
-    print("  GET  /api/habitantes/buscar")
-    print("  POST /api/habitantes")
-    print("  POST /api/sync/verificar")
-    print("  GET  /api/ping")
+    print("  GET    /api/habitantes")
+    print("  GET    /api/habitantes/buscar?q=criterio")
+    print("  GET    /api/habitantes/nombre/<nombre>")
+    print("  POST   /api/habitantes")
+    print("  PATCH  /api/habitantes/<folio>")
+    print("  POST   /api/sync/verificar")
+    print("  GET    /api/folio/siguiente")
+    print("  GET    /api/ping")
     print("="*50)
     print("Presiona Ctrl+C para detener el servidor\n")
     

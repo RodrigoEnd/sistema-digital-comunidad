@@ -22,6 +22,53 @@ API_HOST = os.getenv("API_HOST", "127.0.0.1")
 # Modo offline: si es True no se requiere la API para operar
 MODO_OFFLINE = os.getenv("MODO_OFFLINE", "False").lower() == "true"
 
+# ============================================================================
+# DOCUMENTACION DE ENDPOINTS DE API LOCAL
+# ============================================================================
+# Todos los endpoints estan disponibles en http://127.0.0.1:5000/api
+# 
+# HABITANTES:
+#   GET    /habitantes              - Obtener todos los habitantes
+#   GET    /habitantes/buscar?q=xxx - Buscar habitantes por criterio
+#   GET    /habitantes/nombre/<nom> - Obtener habitante por nombre exacto
+#   POST   /habitantes              - Agregar nuevo habitante
+#   PATCH  /habitantes/<folio>      - Actualizar habitante
+#
+# FOLIOS:
+#   GET    /folio/siguiente         - Obtener siguiente folio disponible
+#
+# SINCRONIZACION:
+#   POST   /sync/verificar          - Verificar/crear habitante si no existe
+#
+# SALUD:
+#   GET    /ping                    - Verificar que API esta funcionando
+#
+# NOTAS:
+#   - Todos los metodos retornan JSON
+#   - Campo 'success' indica exito/error
+#   - Errores retornan codigo HTTP apropiado (400, 404, 500)
+# ============================================================================
+
+# Tabla de endpoints para referencia rapida
+API_ENDPOINTS = {
+    'habitantes': {
+        'listar': 'GET /api/habitantes',
+        'buscar': 'GET /api/habitantes/buscar',
+        'por_nombre': 'GET /api/habitantes/nombre/<nombre>',
+        'crear': 'POST /api/habitantes',
+        'actualizar': 'PATCH /api/habitantes/<folio>',
+    },
+    'folio': {
+        'siguiente': 'GET /api/folio/siguiente',
+    },
+    'sincronizacion': {
+        'verificar': 'POST /api/sync/verificar',
+    },
+    'salud': {
+        'ping': 'GET /api/ping',
+    }
+}
+
 # Seguridad
 PASSWORD_CIFRADO = os.getenv("PASSWORD_CIFRADO", "SistemaComunidad2026")
 SALT_CIFRADO = os.getenv("SALT_CIFRADO", "SistemaComunidad2026Salt").encode()
@@ -127,3 +174,19 @@ HORA_INICIO_DEFECTO = '9'
 HORA_INICIO_AMPM_DEFECTO = 'AM'
 HORA_FIN_DEFECTO = '1'
 HORA_FIN_AMPM_DEFECTO = 'PM'
+
+# Censo - Constantes de interfaz
+CENSO_DEBOUNCE_MS = 180
+CENSO_NOTA_MAX_DISPLAY = 30
+CENSO_NOMBRES_SIMILARES_MIN_PALABRAS = 2
+CENSO_NOMBRES_SIMILARES_MAX_RESULTADOS = 5
+
+# Censo - Columnas del TreeView
+CENSO_COLUMNAS = ['folio', 'nombre', 'fecha_registro', 'activo', 'nota']
+CENSO_COLUMNAS_ANCHOS = {
+    'folio': 80,
+    'nombre': 280,
+    'fecha_registro': 120,
+    'activo': 100,
+    'nota': 200
+}

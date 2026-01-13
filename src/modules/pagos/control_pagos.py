@@ -27,6 +27,23 @@ from src.ui.tema_moderno import FUENTES, FUENTES_DISPLAY, ESPACIADO, ICONOS
 from src.ui.estilos_globales import TEMA_GLOBAL
 from src.ui.ui_moderna import BarraSuperior, PanelModerno, BotonModerno
 from src.ui.buscador import BuscadorAvanzado
+# === Importar gestores modularizados ===
+from src.modules.pagos.pagos_gestor_cooperaciones import GestorCooperaciones
+from src.modules.pagos.pagos_gestor_personas import GestorPersonas
+from src.modules.pagos.pagos_gestor_datos import GestorDatos
+from src.modules.pagos.pagos_gestor_api import GestorAPI
+from src.modules.pagos.pagos_seguridad import GestorSeguridad
+from src.modules.pagos.pagos_dialogos import (
+    DialogoRegistrarPago, 
+    DialogoAgregarPersona, 
+    DialogoEditarPersona,
+    DialogoNuevaCooperacion,
+    DialogoEditarCooperacion,
+    DialogoVerHistorial
+)
+from src.modules.pagos.pagos_barra_estado import BarraEstadoModerna
+from src.modules.pagos.pagos_tooltips import TooltipModerno
+from src.modules.pagos.pagos_confirmaciones import ConfirmacionMejorada
 
 class SistemaControlPagos:
     # Los temas y tamaños ahora vienen de config.py
@@ -44,10 +61,10 @@ class SistemaControlPagos:
         # Accesibilidad
         self.tamaño_actual = tk.StringVar(value='normal')
         
-        # Datos
-        self.cooperaciones = []  # Inicializar cooperaciones ANTES de cargar datos
+        # Datos - inicializar ANTES de gestores
+        self.cooperaciones = []
         self.coop_activa_id = None
-        self.cooperacion_actual = None  # Nombre descriptivo de la cooperacion activa
+        self.cooperacion_actual = None
         self.personas = []
         self.monto_cooperacion = 100.0
         self.proyecto_actual = "Proyecto Comunitario 2026"
@@ -57,20 +74,41 @@ class SistemaControlPagos:
         self.password_hash = None
         self.api_url = API_URL
         self.fila_animada = None
-        self.guardado_pendiente = None  # Timer para debounce de guardado
-        self.usuario_actual = None  # Usuario autenticado
-        self.gestor_auth = None  # Gestor de autenticación
-        self.gestor_historial = GestorHistorial(id_cooperacion='general')  # Gestor de historial por cooperación
-        self.buscador = BuscadorAvanzado()  # Buscador avanzado
-        self.gestor_backups = GestorBackups()  # Gestor de backups
-        self.tree_persona_map = {}  # Mapea iids del tree a objetos persona
-        self.permisos_rol = self.gestor_auth.ROLES if self.gestor_auth else {}
+        self.guardado_pendiente = None
+        self.usuario_actual = None
+        self.gestor_auth = None
+        self.tree_persona_map = {}
+        self.permisos_rol = {}
         self.api_caida_notificada = False
-        self.barra_superior = None  # Referencia a barra superior para actualizaciones
+        self.barra_superior = None
+        # BUGFIX: Inicializar variables UI temprano para evitar AttributeError
+        self.monto_var = tk.DoubleVar(value=100.0)
+        self.proyecto_var = tk.StringVar(value="Proyecto Comunitario 2026")
+        # BUGFIX TCL: Inicializar afterID para evitar comandos inválidos
+        self._after_id_barra = None
         
-        # Cargar datos si existen
+        # Cargar datos del archivo PRIMERO
         self.cargar_datos()
+        
+        # === INICIALIZAR GESTORES MODULARIZADOS - DESPUÉS de cargar datos ===
+        self.gestor_datos = GestorDatos(ARCHIVO_PAGOS, PASSWORD_CIFRADO)
+        self.gestor_cooperaciones = GestorCooperaciones(ARCHIVO_PAGOS, None)
+        # Sincronizar datos con gestores
+        self.gestor_cooperaciones.cargar_cooperaciones({
+            'cooperaciones': self.cooperaciones,
+            'cooperacion_activa': self.coop_activa_id
+        })
+        self.gestor_personas = GestorPersonas()
+        self.gestor_api = GestorAPI(API_URL)
+        self.gestor_seguridad = GestorSeguridad()
+        self.gestor_historial = GestorHistorial(id_cooperacion='general')
+        self.buscador = BuscadorAvanzado()
+        self.gestor_backups = GestorBackups()
+        
         self.aplicar_cooperacion_activa()
+        
+        # BUGFIX: Auditar coherencia de cooperaciones al iniciar
+        self._auditar_coherencia_inicial()
         
         # Aplicar tamaño guardado
         if hasattr(self, 'tamaño_guardado'):
@@ -95,6 +133,23 @@ class SistemaControlPagos:
         self.nombre_visible = tk.BooleanVar(value=True)
         self.folio_visible = tk.BooleanVar(value=True)
         self.cifras_visibles = True  # Para ocultar/mostrar cifras sensibles
+        
+        # Barra de estado
+        self.barra_estado = None
+        self.cambios_pendientes = 0
+        
+        # Timer para búsqueda con debounce
+        self._timer_busqueda = None
+        
+        # Variables para ordenamiento (MEJORA 4)
+        self.columna_ordenamiento = None
+        self.orden_ascendente = True
+        self.habilitar_ordenamiento_var = tk.BooleanVar(value=False)  # BUGFIX: Control de ordenamiento
+        
+        # BUGFIX: Inicializar API en background para no ralentizar apertura UI
+        # NO bloqueamos con messagebox aquí, se hace en background
+        self.api_activa = True  # Asumir que funciona por defecto
+        threading.Thread(target=self._inicializar_api_background, daemon=True).start()
         
         # Configurar backup automático al cerrar
         self.root.protocol("WM_DELETE_WINDOW", self.cerrar_aplicacion)
@@ -286,12 +341,18 @@ class SistemaControlPagos:
 
     # ====== GESTION DE COOPERACIONES ======
     def obtener_cooperacion_activa(self):
-        for coop in self.cooperaciones:
-            if coop.get('id') == self.coop_activa_id:
-                return coop
-        return None
+        """BUGFIX: Buscar cooperación activa directamente en la lista para coherencia"""
+        # Buscar por ID activo
+        if self.coop_activa_id:
+            for coop in self.cooperaciones:
+                if coop.get('id') == self.coop_activa_id:
+                    return coop
+        
+        # Si no encuentra por ID, usar gestor como fallback
+        return self.gestor_cooperaciones.obtener_cooperacion_activa()
 
     def aplicar_cooperacion_activa(self):
+        """BUGFIX: Aplica cooperación activa e inicializa historial coherente"""
         coop = self.obtener_cooperacion_activa()
         if coop is None and self.cooperaciones:
             self.coop_activa_id = self.cooperaciones[0].get('id')
@@ -306,207 +367,144 @@ class SistemaControlPagos:
             }
             self.cooperaciones = [coop]
             self.coop_activa_id = coop['id']
+        
+        # Aplicar datos de cooperación activa
         self.personas = coop.setdefault('personas', [])
         self.monto_cooperacion = coop.get('monto_cooperacion', self.monto_cooperacion)
         self.proyecto_actual = coop.get('proyecto', self.proyecto_actual)
         self.cooperacion_actual = coop.get('nombre', 'Cooperacion')
         
-        # Reinicializar gestor de historial para esta cooperación
-        self.gestor_historial = GestorHistorial(id_cooperacion=self.coop_activa_id)
+        # BUGFIX: Reinicializar gestor de historial para que sea INDEPENDIENTE por cooperación
+        # El historial ahora registra cambios específicos de cada cooperación
+        coop_id_para_historial = self.coop_activa_id or 'general'
+        self.gestor_historial = GestorHistorial(id_cooperacion=coop_id_para_historial)
+        
+        registrar_operacion(
+            'CAMBIO_COOPERACION_ACTIVA',
+            f'Cooperación cambiada a: {self.cooperacion_actual}',
+            {
+                'cooperacion_id': self.coop_activa_id,
+                'nombre': self.cooperacion_actual,
+                'proyecto': self.proyecto_actual,
+                'personas': len(self.personas)
+            }
+        )
 
     def refrescar_selector_cooperacion(self, seleccionar_activa=True):
+        """BUGFIX: Refrescar selector y disparar cambio de cooperación manualmente si es necesario"""
         nombres = [c.get('nombre', 'Sin nombre') for c in self.cooperaciones]
         self.coop_selector['values'] = nombres
         if seleccionar_activa:
             activa = self.obtener_cooperacion_activa()
             if activa and activa.get('nombre') in nombres:
                 idx = nombres.index(activa['nombre'])
+                # BUGFIX: No disparar evento automáticamente, hacerlo manualmente después
                 self.coop_selector.current(idx)
 
     def on_cambio_cooperacion(self, event=None):
+        """BUGFIX: Cambiar a una cooperación diferente - sincronización COMPLETA"""
+        # BUGFIX: Obtener el nombre del selector
         nombre = self.coop_selector.get()
+        
+        # Si está vacío, ignorar
+        if not nombre or nombre.strip() == '':
+            return
+        
+        # Buscar cooperación por nombre
         destino = next((c for c in self.cooperaciones if c.get('nombre') == nombre), None)
         if not destino:
+            print(f"[BUGFIX] No se encontró cooperación: {nombre}")
             return
+        
+        # BUGFIX: Solo cambiar si es diferente de la actual
+        if self.coop_activa_id == destino.get('id'):
+            print(f"[BUGFIX] Cooperación ya activa: {nombre}")
+            return
+        
+        print(f"[BUGFIX] Cambiando a cooperación: {nombre}")
         self.coop_activa_id = destino.get('id')
+        
+        # Sincronización COMPLETA en orden correcto:
+        # 1. Aplicar datos de cooperación (actualiza personas, monto, proyecto, historial)
         self.aplicar_cooperacion_activa()
+        
+        # 2. Refrescar UI (actualiza labels con nuevos valores)
         self.refrescar_interfaz_cooperacion()
-        self.sincronizar_coop_con_censo(mostrar_mensaje=False)
+        
+        # 3. Actualizar tabla con nuevas personas
         self.actualizar_tabla()
+        
+        # 4. Actualizar totales con nuevos cálculos
         self.actualizar_totales()
-        self.guardar_datos(mostrar_alerta=False)
+        
+        # 5. Sincronizar con censo si es necesario
+        self.sincronizar_coop_con_censo(mostrar_mensaje=False)
+        
+        # 6. Guardar cambios
+        self.guardar_datos(mostrar_alerta=False, inmediato=True)
     
     def nueva_cooperacion(self):
-        dialog = tk.Toplevel(self.root)
-        dialog.title("Nueva Cooperacion")
-        dialog.geometry("500x320")
-        dialog.transient(self.root)
-        dialog.grab_set()
-        
-        tamaños = self.obtener_tamaños()
-        
-        ttk.Label(dialog, text="Nombre de la cooperacion:", font=('Arial', tamaños['normal'], 'bold')).pack(pady=5, padx=20, anchor=tk.W)
-        nombre_var = tk.StringVar(value="Cooperacion nueva")
-        nombre_entry = ttk.Entry(dialog, textvariable=nombre_var, width=50)
-        nombre_entry.pack(pady=5, padx=20)
-        
-        ttk.Label(dialog, text="Monto base por persona:", font=('Arial', tamaños['normal'], 'bold')).pack(pady=5, padx=20, anchor=tk.W)
-        monto_var = tk.DoubleVar(value=self.monto_cooperacion)
-        monto_entry = ttk.Entry(dialog, textvariable=monto_var, width=20)
-        monto_entry.pack(pady=5, padx=20, anchor=tk.W)
-        
-        ttk.Label(dialog, text="Descripcion/Proyecto:", font=('Arial', tamaños['normal'], 'bold')).pack(pady=5, padx=20, anchor=tk.W)
-        proyecto_var = tk.StringVar(value=self.proyecto_var.get())
-        proyecto_entry = ttk.Entry(dialog, textvariable=proyecto_var, width=50)
-        proyecto_entry.pack(pady=5, padx=20)
-        
-        def crear(event=None):
-            nombre = nombre_var.get().strip()
-            try:
-                monto = float(monto_var.get())
-            except:
-                messagebox.showerror("Error", "Monto invalido")
-                return
-            if not nombre:
-                messagebox.showerror("Error", "El nombre es obligatorio")
-                return
-            if monto <= 0:
-                messagebox.showerror("Error", "El monto debe ser mayor a 0")
-                return
-            if any(nombre.lower() == c.get('nombre', '').lower() for c in self.cooperaciones):
-                messagebox.showerror("Error", "Ya existe una cooperacion con ese nombre")
-                return
-            nueva = {
-                'id': f"coop-{int(time.time()*1000)}",
-                'nombre': nombre,
-                'proyecto': proyecto_var.get().strip() or nombre,
-                'monto_cooperacion': monto,
-                'personas': []
-            }
+        """BUGFIX: Crear nueva cooperación con sincronización completa"""
+        def on_cooperacion_creada(nueva):
             self.cooperaciones.append(nueva)
             self.coop_activa_id = nueva['id']
             self.proyecto_actual = nueva['proyecto']
-            self.monto_cooperacion = monto
+            self.monto_cooperacion = nueva['monto_cooperacion']
             
-            # Registrar en log de operaciones
-            usuario = self.usuario_actual['nombre'] if self.usuario_actual else 'Admin'
-            registrar_operacion('CREAR_COOPERACION', 'Nueva cooperación creada', {
-                'cooperacion_id': nueva['id'],
-                'nombre': nombre,
-                'proyecto': nueva['proyecto'],
-                'monto_base': f"${monto:.2f}",
-                'usuario': usuario
-            }, usuario)
-            
-            # Registrar en historial con todos los detalles
-            self.gestor_historial.registrar_cambio('CREAR', 'COOPERACION', nueva['id'], 
-                {'nombre': {'anterior': None, 'nuevo': nombre},
-                 'proyecto': {'anterior': None, 'nuevo': nueva['proyecto']},
-                 'monto': {'anterior': None, 'nuevo': f"${monto:.2f}"}},
-                usuario)
-            
+            # BUGFIX: Aplicar cambia automáticamente el historial y sincroniza
             self.aplicar_cooperacion_activa()
             self.refrescar_selector_cooperacion()
             self.refrescar_interfaz_cooperacion()
             self.sincronizar_coop_con_censo(mostrar_mensaje=False)
             self.actualizar_tabla()
             self.actualizar_totales()
-            self.guardar_datos(mostrar_alerta=False)
-            dialog.destroy()
-            messagebox.showinfo("Exito", f"Cooperacion '{nombre}' creada y activada")
+            self.guardar_datos(mostrar_alerta=False, inmediato=True)
         
-        botones = ttk.Frame(dialog)
-        botones.pack(pady=20)
-        ttk.Button(botones, text="Crear y activar", command=crear, width=20).pack(side=tk.LEFT, padx=5)
-        ttk.Button(botones, text="Cancelar", command=dialog.destroy, width=14).pack(side=tk.LEFT, padx=5)
-        dialog.bind("<Return>", crear)
-        nombre_entry.focus()
+        DialogoNuevaCooperacion.mostrar(
+            parent=self.root,
+            monto_default=self.monto_cooperacion,
+            proyecto_default=self.proyecto_var.get(),
+            cooperaciones_lista=self.cooperaciones,
+            gestor_historial=self.gestor_historial,
+            usuario_actual=self.usuario_actual,
+            callback_ok=on_cooperacion_creada,
+            tema_global=self.tema_global
+        )
 
     def editar_cooperacion(self):
+        """BUGFIX: Editar cooperación con actualización completa"""
         coop = self.obtener_cooperacion_activa()
         if not coop:
-            messagebox.showerror("Error", "No hay cooperacion activa")
+            messagebox.showerror("Error", "No hay cooperación activa")
             return
-        dialog = tk.Toplevel(self.root)
-        dialog.title("Editar Cooperacion")
-        dialog.geometry("500x320")
-        dialog.transient(self.root)
-        dialog.grab_set()
         
-        tamaños = self.obtener_tamaños()
-        
-        ttk.Label(dialog, text="Nombre de la cooperacion:", font=('Arial', tamaños['normal'], 'bold')).pack(pady=5, padx=20, anchor=tk.W)
-        nombre_var = tk.StringVar(value=coop.get('nombre', ''))
-        nombre_entry = ttk.Entry(dialog, textvariable=nombre_var, width=50)
-        nombre_entry.pack(pady=5, padx=20)
-        
-        ttk.Label(dialog, text="Monto base por persona:", font=('Arial', tamaños['normal'], 'bold')).pack(pady=5, padx=20, anchor=tk.W)
-        monto_var = tk.DoubleVar(value=coop.get('monto_cooperacion', self.monto_cooperacion))
-        monto_entry = ttk.Entry(dialog, textvariable=monto_var, width=20)
-        monto_entry.pack(pady=5, padx=20, anchor=tk.W)
-        
-        ttk.Label(dialog, text="Descripcion/Proyecto:", font=('Arial', tamaños['normal'], 'bold')).pack(pady=5, padx=20, anchor=tk.W)
-        proyecto_var = tk.StringVar(value=coop.get('proyecto', self.proyecto_var.get()))
-        proyecto_entry = ttk.Entry(dialog, textvariable=proyecto_var, width=50)
-        proyecto_entry.pack(pady=5, padx=20)
-        
-        def guardar(event=None):
-            nombre = nombre_var.get().strip()
-            try:
-                monto = float(monto_var.get())
-            except:
-                messagebox.showerror("Error", "Monto invalido")
-                return
-            if not nombre:
-                messagebox.showerror("Error", "El nombre es obligatorio")
-                return
-            if monto <= 0:
-                messagebox.showerror("Error", "El monto debe ser mayor a 0")
-                return
-            if any(nombre.lower() == c.get('nombre', '').lower() and c.get('id') != coop.get('id') for c in self.cooperaciones):
-                messagebox.showerror("Error", "Ya existe otra cooperacion con ese nombre")
-                return
+        def on_cooperacion_editada(cooperacion, cambios):
+            # BUGFIX: Actualizar la cooperación en la lista
+            idx = next((i for i, c in enumerate(self.cooperaciones) if c['id'] == cooperacion['id']), None)
+            if idx is not None:
+                self.cooperaciones[idx] = cooperacion
             
-            # Registrar cambios antes de aplicar
-            cambios = {}
-            if coop.get('nombre') != nombre:
-                cambios['nombre'] = {'anterior': coop.get('nombre', ''), 'nuevo': nombre}
-            if coop.get('monto_cooperacion') != monto:
-                cambios['monto'] = {'anterior': f"${coop.get('monto_cooperacion', 0):.2f}", 'nuevo': f"${monto:.2f}"}
-            if coop.get('proyecto') != proyecto_var.get().strip():
-                cambios['proyecto'] = {'anterior': coop.get('proyecto', ''), 'nuevo': proyecto_var.get().strip() or nombre}
+            self.monto_cooperacion = cooperacion['monto_cooperacion']
+            self.proyecto_actual = cooperacion['proyecto']
+            self.cooperacion_actual = cooperacion.get('nombre', 'Cooperación')
             
-            coop['nombre'] = nombre
-            coop['monto_cooperacion'] = monto
-            coop['proyecto'] = proyecto_var.get().strip() or nombre
-            self.monto_cooperacion = monto
-            self.proyecto_actual = coop['proyecto']
-            
-            # Registrar en log si hubo cambios
-            if cambios:
-                usuario = self.usuario_actual['nombre'] if self.usuario_actual else 'Admin'
-                registrar_operacion('EDITAR_COOPERACION', 'Cooperación modificada', {
-                    'cooperacion_id': coop.get('id', 'desconocido'),
-                    'cambios': cambios,
-                    'usuario': usuario
-                }, usuario)
-                
-                # Registrar en historial
-                self.gestor_historial.registrar_cambio('EDITAR', 'COOPERACION', coop.get('id', 'desconocido'),
-                    cambios, usuario)
-            
+            # BUGFIX: Reaplica para actualizar historial y UI
+            self.aplicar_cooperacion_activa()
             self.refrescar_selector_cooperacion()
             self.refrescar_interfaz_cooperacion()
-            self.guardar_datos(mostrar_alerta=False)
-            dialog.destroy()
-            messagebox.showinfo("Exito", "Cooperacion actualizada")
+            self.actualizar_tabla()
+            self.actualizar_totales()
+            self.guardar_datos(mostrar_alerta=False, inmediato=True)
         
-        botones = ttk.Frame(dialog)
-        botones.pack(pady=20)
-        ttk.Button(botones, text="Guardar", command=guardar, width=20).pack(side=tk.LEFT, padx=5)
-        ttk.Button(botones, text="Cancelar", command=dialog.destroy, width=14).pack(side=tk.LEFT, padx=5)
-        dialog.bind("<Return>", guardar)
-        nombre_entry.focus()
+        DialogoEditarCooperacion.mostrar(
+            parent=self.root,
+            cooperacion=coop,
+            cooperaciones_lista=self.cooperaciones,
+            gestor_historial=self.gestor_historial,
+            usuario_actual=self.usuario_actual,
+            callback_ok=on_cooperacion_editada,
+            tema_global=self.tema_global
+        )
 
     def sincronizar_coop_con_censo(self, mostrar_mensaje=True):
         coop = self.obtener_cooperacion_activa()
@@ -626,18 +624,29 @@ class SistemaControlPagos:
             messagebox.showerror("Error", f"Error al corregir folios: {resultado.get('error', 'Desconocido')}")
 
     def refrescar_interfaz_cooperacion(self):
+        """BUGFIX: Actualiza todos los elementos UI cuando cambia cooperación"""
         coop = self.obtener_cooperacion_activa()
         if not coop:
             return
+        
+        # Actualizar personas y datos
         self.personas = coop.setdefault('personas', [])
         self.monto_cooperacion = coop.get('monto_cooperacion', self.monto_cooperacion)
         self.proyecto_actual = coop.get('proyecto', self.proyecto_actual)
+        self.cooperacion_actual = coop.get('nombre', 'Cooperación')
+        
+        # BUGFIX: Actualizar TODOS los widgets de la UI
         if hasattr(self, 'monto_var'):
             self.monto_var.set(self.monto_cooperacion)
         if hasattr(self, 'proyecto_var'):
             self.proyecto_var.set(self.proyecto_actual)
         if hasattr(self, 'total_personas_label'):
             self.total_personas_label.config(text=str(len(self.personas)))
+        
+        # Actualizar título si existe
+        if hasattr(self, 'titulo_coop_label'):
+            self.titulo_coop_label.config(text=f"📋 {self.cooperacion_actual}")
+        
         
     def configurar_interfaz(self):
         # Frame principal con mejor espaciado
@@ -653,9 +662,10 @@ class SistemaControlPagos:
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
         main_frame.columnconfigure(0, weight=1)
-        # main_frame tiene dos filas: 0 para barra, 1 para contenido
+        # main_frame tiene tres filas: 0 para barra superior, 1 para contenido, 2 para barra estado
         main_frame.rowconfigure(0, weight=0)  # Barra superior (altura fija)
         main_frame.rowconfigure(1, weight=1)  # Contenedor principal (expandible)
+        main_frame.rowconfigure(2, weight=0)  # Barra de estado (altura fija)
         
         tamaños = self.obtener_tamaños()
         
@@ -869,18 +879,26 @@ class SistemaControlPagos:
         self.search_box.grid(row=0, column=0, sticky=(tk.W, tk.E), padx=(0, ESPACIADO['md']))
         self.search_box.entry.bind('<KeyRelease>', lambda e: self.buscar_tiempo_real())
 
-        BotonModerno(controles_header, f"{ICONOS['cerrar']} Limpiar", tema=tema_visual, tipo='secondary',
-                 command=self.limpiar_busqueda).grid(row=0, column=1, padx=(0, ESPACIADO['sm']))
-        BotonModerno(controles_header, f"{ICONOS['filtrar']} Búsqueda Avanzada", tema=tema_visual, tipo='ghost',
-                 command=self.abrir_busqueda_avanzada).grid(row=0, column=2, padx=(0, ESPACIADO['sm']))
+        btn_limpiar = BotonModerno(controles_header, f"{ICONOS['cerrar']} Limpiar", tema=tema_visual, tipo='secondary',
+                 command=self.limpiar_busqueda)
+        btn_limpiar.grid(row=0, column=1, padx=(0, ESPACIADO['sm']))
+        TooltipModerno(btn_limpiar, "Limpiar búsqueda y mostrar todas las personas", tema_visual)
+        
+        btn_busqueda_avanzada = BotonModerno(controles_header, f"{ICONOS['filtrar']} Búsqueda Avanzada", tema=tema_visual, tipo='ghost',
+                 command=self.abrir_busqueda_avanzada)
+        btn_busqueda_avanzada.grid(row=0, column=2, padx=(0, ESPACIADO['sm']))
+        TooltipModerno(btn_busqueda_avanzada, "Buscar usando criterios avanzados (monto, estado, etc.)", tema_visual)
 
-        # Controles de visibilidad integrados al header
+        # Controles de visibilidad y ordenamiento integrados al header
         checks_container = tk.Frame(controles_header, bg=tema_visual.get('card_bg', tema_visual['bg_secundario']))
         checks_container.grid(row=0, column=3, padx=(ESPACIADO['md'], 0))
         ttk.Checkbutton(checks_container, text="Mostrar folio", variable=self.folio_visible,
                 command=self.actualizar_visibilidad_columnas).pack(side=tk.LEFT, padx=(0, ESPACIADO['sm']))
         ttk.Checkbutton(checks_container, text="Mostrar nombre", variable=self.nombre_visible,
-                command=self.actualizar_visibilidad_columnas).pack(side=tk.LEFT)
+                command=self.actualizar_visibilidad_columnas).pack(side=tk.LEFT, padx=(0, ESPACIADO['sm']))
+        
+        # BUGFIX: Checkbox para habilitar/deshabilitar ordenamiento
+        ttk.Checkbutton(checks_container, text="Ordenar por columna", variable=self.habilitar_ordenamiento_var).pack(side=tk.LEFT)
         
         actions_content = self.actions_panel.content_frame
         
@@ -888,29 +906,54 @@ class SistemaControlPagos:
         btn_row1 = tk.Frame(actions_content, bg=tema_visual.get('card_bg', tema_visual['bg_secundario']))
         btn_row1.pack(fill=tk.X, pady=(0, ESPACIADO['sm']))
         
-        BotonModerno(btn_row1, f"{ICONOS['agregar']} Agregar Persona", tema=tema_visual, tipo='success',
-                    command=self.agregar_persona).pack(side=tk.LEFT, padx=(0, ESPACIADO['sm']))
-        BotonModerno(btn_row1, f"{ICONOS['editar']} Editar", tema=tema_visual, tipo='ghost',
-                    command=self.editar_persona).pack(side=tk.LEFT, padx=(0, ESPACIADO['sm']))
-        BotonModerno(btn_row1, f"{ICONOS['eliminar']} Eliminar", tema=tema_visual, tipo='error',
-                    command=self.eliminar_persona).pack(side=tk.LEFT, padx=(0, ESPACIADO['sm']))
-        BotonModerno(btn_row1, f"{ICONOS['dinero']} Registrar Pago", tema=tema_visual, tipo='primary',
-                    command=self.registrar_pago).pack(side=tk.LEFT, padx=(0, ESPACIADO['sm']))
-        BotonModerno(btn_row1, f"{ICONOS['reporte']} Ver Historial", tema=tema_visual, tipo='ghost',
-                    command=self.ver_historial_completo).pack(side=tk.LEFT)
+        btn_agregar = BotonModerno(btn_row1, f"{ICONOS['agregar']} Agregar Persona", tema=tema_visual, tipo='success',
+                    command=self.agregar_persona)
+        btn_agregar.pack(side=tk.LEFT, padx=(0, ESPACIADO['sm']))
+        TooltipModerno(btn_agregar, "Agregar nueva persona a la cooperación", tema_visual)
+        
+        btn_editar = BotonModerno(btn_row1, f"{ICONOS['editar']} Editar", tema=tema_visual, tipo='ghost',
+                    command=self.editar_persona)
+        btn_editar.pack(side=tk.LEFT, padx=(0, ESPACIADO['sm']))
+        TooltipModerno(btn_editar, "Editar información de la persona seleccionada", tema_visual)
+        
+        btn_eliminar = BotonModerno(btn_row1, f"{ICONOS['eliminar']} Eliminar", tema=tema_visual, tipo='error',
+                    command=self.eliminar_persona)
+        btn_eliminar.pack(side=tk.LEFT, padx=(0, ESPACIADO['sm']))
+        TooltipModerno(btn_eliminar, "Eliminar la persona seleccionada (sin confirmación)", tema_visual)
+        
+        btn_pago = BotonModerno(btn_row1, f"{ICONOS['dinero']} Registrar Pago", tema=tema_visual, tipo='primary',
+                    command=self.registrar_pago)
+        btn_pago.pack(side=tk.LEFT, padx=(0, ESPACIADO['sm']))
+        TooltipModerno(btn_pago, "Registrar un nuevo pago para la persona seleccionada", tema_visual)
+        
+        btn_historial = BotonModerno(btn_row1, f"{ICONOS['reporte']} Ver Historial", tema=tema_visual, tipo='ghost',
+                    command=self.ver_historial_completo)
+        btn_historial.pack(side=tk.LEFT)
+        TooltipModerno(btn_historial, "Ver historial completo de pagos de todas las personas", tema_visual)
         
         # Fila 2 de botones
         btn_row2 = tk.Frame(actions_content, bg=tema_visual.get('card_bg', tema_visual['bg_secundario']))
         btn_row2.pack(fill=tk.X)
         
-        BotonModerno(btn_row2, f"{ICONOS['sincronizar']} Sincronizar con Censo", tema=tema_visual, tipo='ghost',
-                    command=self.sincronizar_coop_con_censo).pack(side=tk.LEFT, padx=(0, ESPACIADO['sm']))
-        BotonModerno(btn_row2, f"{ICONOS['herramientas']} Corregir Folios", tema=tema_visual, tipo='warning',
-                    command=self.corregir_folios).pack(side=tk.LEFT, padx=(0, ESPACIADO['sm']))
-        BotonModerno(btn_row2, f"{ICONOS['exportar']} Exportar Excel", tema=tema_visual, tipo='ghost',
-                    command=self.exportar_excel).pack(side=tk.LEFT, padx=(0, ESPACIADO['sm']))
-        BotonModerno(btn_row2, f"{ICONOS['guardar']} Crear Backup", tema=tema_visual, tipo='ghost',
-                    command=self.crear_backup).pack(side=tk.LEFT, padx=(0, ESPACIADO['sm']))
+        btn_sync = BotonModerno(btn_row2, f"{ICONOS['sincronizar']} Sincronizar con Censo", tema=tema_visual, tipo='ghost',
+                    command=self.sincronizar_coop_con_censo)
+        btn_sync.pack(side=tk.LEFT, padx=(0, ESPACIADO['sm']))
+        TooltipModerno(btn_sync, "Sincronizar personas con el sistema de censo", tema_visual)
+        
+        btn_folios = BotonModerno(btn_row2, f"{ICONOS['herramientas']} Corregir Folios", tema=tema_visual, tipo='warning',
+                    command=self.corregir_folios)
+        btn_folios.pack(side=tk.LEFT, padx=(0, ESPACIADO['sm']))
+        TooltipModerno(btn_folios, "Detectar y corregir folios duplicados automáticamente", tema_visual)
+        
+        btn_excel = BotonModerno(btn_row2, f"{ICONOS['exportar']} Exportar Excel", tema=tema_visual, tipo='ghost',
+                    command=self.exportar_excel)
+        btn_excel.pack(side=tk.LEFT, padx=(0, ESPACIADO['sm']))
+        TooltipModerno(btn_excel, "Exportar datos a archivo Excel para reportes", tema_visual)
+        
+        btn_backup = BotonModerno(btn_row2, f"{ICONOS['guardar']} Crear Backup", tema=tema_visual, tipo='ghost',
+                    command=self.crear_backup)
+        btn_backup.pack(side=tk.LEFT, padx=(0, ESPACIADO['sm']))
+        TooltipModerno(btn_backup, "Crear copia de seguridad de todos los datos", tema_visual)
         
         # Botón de pantalla completa en la esquina superior derecha del header
         titulo_frame = self.table_panel.card.winfo_children()[0]  # El header_frame
@@ -986,6 +1029,8 @@ class SistemaControlPagos:
         self.menu_persona.add_separator()
         self.menu_persona.add_command(label=f"{ICONOS['reporte']} Ver historial", command=self.ver_historial_completo)
         self.tree.bind('<Button-3>', self._mostrar_menu_persona)
+        self.tree.bind('<Double-Button-1>', self._on_tree_double_click)  # MEJORA 2: Doble clic
+        self.tree.bind('<Button-1>', self._on_tree_heading_click)  # MEJORA 4: Clic en header para ordenar
         
         self.actualizar_visibilidad_columnas()
         self.refrescar_selector_cooperacion()
@@ -995,6 +1040,14 @@ class SistemaControlPagos:
         # Cargar datos en la tabla
         self.actualizar_tabla()
         self.actualizar_totales()
+        
+        # ===== BARRA DE ESTADO INFERIOR =====
+        self.barra_estado = BarraEstadoModerna(main_frame, tema_visual)
+        self.barra_estado.frame.grid(row=2, column=0, sticky=(tk.W, tk.E), padx=0, pady=0)
+        self.actualizar_estado_barra()
+        
+        # ===== ATAJOS DE TECLADO (MEJORA 7) =====
+        self._configurar_atajos_teclado()
 
     def actualizar_visibilidad_columnas(self):
         """Mostrar/ocultar columnas de nombre y folio"""
@@ -1115,68 +1168,30 @@ class SistemaControlPagos:
         return None
 
     def asegurar_api_activa(self):
-        """Comprueba la API y la levanta si no está activa"""
-        if MODO_OFFLINE:
-            return True
-        if self.verificar_api():
-            return True
+        """Delegado a GestorAPI"""
+        return self.gestor_api.asegurar_api_activa()
+
+    def _inicializar_api_background(self):
+        """BUGFIX: Inicializar API en background sin bloquear UI"""
         try:
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            api_path = os.path.join(script_dir, "api_local.py")
-            subprocess.Popen([sys.executable, api_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            for _ in range(10):
-                time.sleep(0.5)
-                if self.verificar_api():
-                    return True
+            self.api_activa = self.asegurar_api_activa()
+            if self.api_activa:
+                self.iniciar_watchdog_api()
         except Exception as e:
-            print(f"Error iniciando API: {e}")
-        return False
+            self.api_activa = False
+            print(f"[API_BACKGROUND] Error: {e}")
 
     def verificar_api(self):
-        if MODO_OFFLINE:
-            return True
-        try:
-            response = requests.get(f"{self.api_url}/ping", timeout=1.5)
-            return response.status_code == 200
-        except:
-            return False
+        """Delegado a GestorAPI"""
+        return self.gestor_api.verificar_api()
 
     def iniciar_watchdog_api(self):
-        """Hilo de monitoreo ligero para reintentar API local"""
-        def monitor():
-            while True:
-                time.sleep(10)
-                if self.verificar_api():
-                    self.api_caida_notificada = False
-                    continue
-                # intentar reiniciar
-                if self.asegurar_api_activa():
-                    self.api_caida_notificada = False
-                    continue
-                if not self.api_caida_notificada:
-                    registrar_error('API', 'watchdog', 'API local no responde')
-                    try:
-                        messagebox.showwarning("API", "API local no responde; reintentando en segundo plano")
-                    except:
-                        pass
-                    self.api_caida_notificada = True
-        hilo = threading.Thread(target=monitor, daemon=True)
-        hilo.start()
+        """Delegado a GestorAPI"""
+        return self.gestor_api.iniciar_watchdog_api()
 
     def generar_folio_local(self):
-        """Genera un folio local único cuando no hay API"""
-        base = "LOC"
-        intento = 0
-        while True:
-            sufijo = int(time.time() * 1000) % 1000000
-            folio = f"{base}-{sufijo:06d}"
-            if not any(p.get('folio') == folio for p in self.personas):
-                return folio
-            intento += 1
-            if intento > 3:
-                folio = f"{base}-{sufijo:06d}-{intento}"
-                if not any(p.get('folio') == folio for p in self.personas):
-                    return folio
+        """Delegado a GestorAPI"""
+        return self.gestor_api.generar_folio_local()
     
     def actualizar_monto(self):
         if not self._tiene_permiso('editar'):
@@ -1235,92 +1250,30 @@ class SistemaControlPagos:
     def agregar_persona(self):
         if not self._tiene_permiso('crear'):
             return
-        # Ventana para agregar persona
-        dialog = tk.Toplevel(self.root)
-        dialog.title("Agregar Nueva Persona")
-        dialog.geometry("520x300")
-        dialog.transient(self.root)
-        dialog.grab_set()
         
-        tamaños = self.obtener_tamaños()
-        
-        # Campos
-        ttk.Label(dialog, text="Nombre Completo:", font=('Arial', tamaños['normal'], 'bold')).pack(pady=5, padx=20, anchor=tk.W)
-        nombre_entry = ttk.Entry(dialog, width=50)
-        nombre_entry.pack(pady=5, padx=20)
-        
-        ttk.Label(dialog, text=f"Monto de cooperacion: ${self.monto_cooperacion:.2f}", 
-                 font=('Arial', tamaños['normal'], 'italic')).pack(pady=5, padx=20, anchor=tk.W)
-        ttk.Label(dialog, text=f"Cooperacion activa: {self.coop_selector.get() or 'Actual'}", 
-                 font=('Arial', tamaños['normal'], 'italic')).pack(pady=2, padx=20, anchor=tk.W)
-        
-        ttk.Label(dialog, text="Notas (opcional):", font=('Arial', tamaños['normal'], 'bold')).pack(pady=5, padx=20, anchor=tk.W)
-        notas_entry = ttk.Entry(dialog, width=50)
-        notas_entry.pack(pady=5, padx=20)
-        
-        def guardar(event=None):
-            nombre = nombre_entry.get().strip()
-            if not nombre:
-                messagebox.showerror("Error", "El nombre es obligatorio")
-                return
-            
-            # Verificar que no exista el nombre
-            if any(p['nombre'].lower() == nombre.lower() for p in self.personas):
-                messagebox.showerror("Error", "Ya existe una persona con ese nombre")
-                return
-            
-            # Sincronizar con API (verificar/agregar en censo)
-            folio = self.sincronizar_con_censo(nombre)
-            if not folio:
-                messagebox.showwarning("Aviso", "No se pudo obtener folio desde censo. Se generará folio local.")
-                folio = self.generar_folio_local()
-            
-            persona = {
-                'nombre': nombre,
-                'folio': folio,
-                'monto_esperado': self.monto_cooperacion,
-                'pagos': [],  # Lista de pagos parciales
-                'notas': notas_entry.get().strip()
-            }
-            
+        def on_persona_agregada(persona):
             self.personas.append(persona)
-            
-            # Registrar en historial
-            usuario = self.usuario_actual['nombre'] if self.usuario_actual else 'Sistema'
-            self.gestor_historial.registrar_creacion('PERSONA', folio, persona, usuario)
-            
-            # Registrar en log de operaciones
-            registrar_operacion('AGREGAR_PERSONA', 'Nueva persona agregada al sistema', {
-                'cooperacion': self.cooperacion_actual or 'Sin nombre',
-                'folio': folio,
-                'nombre': nombre,
-                'monto_esperado': f"${self.monto_cooperacion:.2f}",
-                'notas': notas_entry.get().strip() or 'Sin notas',
-                'usuario': usuario
-            }, usuario)
-            
-            # Registrar en historial
-            self.gestor_historial.registrar_cambio('CREAR', 'PERSONA', folio,
-                {'nombre': {'anterior': None, 'nuevo': nombre},
-                 'monto': {'anterior': None, 'nuevo': f"${self.monto_cooperacion:.2f}"}},
-                usuario)
-            
             self.actualizar_tabla()
             self.actualizar_totales()
             self.guardar_datos(mostrar_alerta=False)
-            dialog.destroy()
-            messagebox.showinfo("Exito", f"Persona agregada correctamente\nFolio: {folio}")
         
-        botones = ttk.Frame(dialog)
-        botones.pack(pady=20)
-        ttk.Button(botones, text="Confirmar", command=guardar, width=20).pack(side=tk.LEFT, padx=5)
-        ttk.Button(botones, text="Cancelar", command=dialog.destroy, width=14).pack(side=tk.LEFT, padx=5)
-        dialog.bind("<Return>", guardar)
-        nombre_entry.focus()
+        DialogoAgregarPersona.mostrar(
+            parent=self.root,
+            monto_cooperacion=self.monto_cooperacion,
+            cooperacion_actual=self.coop_selector.get() or 'Actual',
+            gestor_personas=self.gestor_personas,
+            gestor_historial=self.gestor_historial,
+            usuario_actual=self.usuario_actual,
+            callback_sincronizar_censo=self.sincronizar_con_censo,
+            callback_generar_folio=self.generar_folio_local,
+            callback_ok=on_persona_agregada,
+            tema_global=self.tema_global
+        )
     
     def editar_persona(self):
         if not self._tiene_permiso('editar'):
             return
+        
         seleccion = self.tree.selection()
         if not seleccion:
             messagebox.showwarning("Advertencia", "Por favor seleccione una persona")
@@ -1331,80 +1284,26 @@ class SistemaControlPagos:
         if not persona:
             messagebox.showerror("Error", "No se pudo localizar la persona seleccionada")
             return
+        
         try:
             index = self.personas.index(persona)
         except ValueError:
             messagebox.showerror("Error", "La persona seleccionada ya no existe en la lista")
             return
         
-        # Ventana para editar
-        dialog = tk.Toplevel(self.root)
-        dialog.title("Editar Persona")
-        dialog.geometry("400x200")
-        dialog.transient(self.root)
-        dialog.grab_set()
-        
-        # Campos prellenados
-        ttk.Label(dialog, text=f"Folio: {persona.get('folio', 'SIN-FOLIO')}", 
-                 font=('Arial', 9, 'italic')).pack(pady=5)
-        
-        ttk.Label(dialog, text="Nombre Completo:", font=('Arial', 10, 'bold')).pack(pady=5)
-        nombre_entry = ttk.Entry(dialog, width=40)
-        nombre_entry.insert(0, persona['nombre'])
-        nombre_entry.pack(pady=5)
-        
-        ttk.Label(dialog, text="Notas:", font=('Arial', 10, 'bold')).pack(pady=5)
-        notas_entry = ttk.Entry(dialog, width=40)
-        notas_entry.insert(0, persona.get('notas', ''))
-        notas_entry.pack(pady=5)
-        
-        def guardar():
-            nombre = nombre_entry.get().strip()
-            if not nombre:
-                messagebox.showerror("Error", "El nombre es obligatorio")
-                return
-            
-            # Verificar que no exista otro con el mismo nombre
-            if nombre.lower() != persona['nombre'].lower():
-                if any(p['nombre'].lower() == nombre.lower() for p in self.personas):
-                    messagebox.showerror("Error", "Ya existe una persona con ese nombre")
-                    return
-            
-            # Guardar valores anteriores para historial
-            cambios = {}
-            if persona['nombre'] != nombre:
-                cambios['nombre'] = {'anterior': persona['nombre'], 'nuevo': nombre}
-            if persona.get('notas', '') != notas_entry.get().strip():
-                cambios['notas'] = {'anterior': persona.get('notas', ''), 'nuevo': notas_entry.get().strip()}
-            
-            # Registrar cambios si los hubo
-            if cambios:
-                usuario = self.usuario_actual['nombre'] if self.usuario_actual else 'Sistema'
-                registrar_operacion('EDITAR_PERSONA', 'Información de persona modificada', {
-                    'cooperacion': self.cooperacion_actual or 'Sin nombre',
-                    'folio': persona.get('folio', 'SIN-FOLIO'),
-                    'cambios': cambios,
-                    'usuario': usuario
-                }, usuario)
-                
-                # Registrar en historial
-                self.gestor_historial.registrar_cambio('EDITAR', 'PERSONA', persona.get('folio', 'SIN-FOLIO'),
-                    cambios, usuario)
-            
-            self.personas[index]['nombre'] = nombre
-            self.personas[index]['notas'] = notas_entry.get().strip()
-            
-            # Registrar en historial si hubo cambios
-            if cambios:
-                usuario = self.usuario_actual['nombre'] if self.usuario_actual else 'Sistema'
-                self.gestor_historial.registrar_cambio('EDITAR', 'PERSONA', persona.get('folio', ''), cambios, usuario)
-            
+        def on_persona_editada(persona, cambios):
             self.actualizar_tabla()
             self.actualizar_totales()
-            dialog.destroy()
-            messagebox.showinfo("Exito", "Persona actualizada correctamente")
         
-        ttk.Button(dialog, text="Guardar Cambios", command=guardar).pack(pady=15)
+        DialogoEditarPersona.mostrar(
+            parent=self.root,
+            persona=persona,
+            personas_lista=self.personas,
+            gestor_historial=self.gestor_historial,
+            usuario_actual=self.usuario_actual,
+            tema_global=self.tema_global,
+            callback_ok=on_persona_editada
+        )
     
     def eliminar_persona(self):
         if not self._tiene_permiso('editar'):
@@ -1425,9 +1324,33 @@ class SistemaControlPagos:
             messagebox.showerror("Error", "La persona seleccionada ya no existe en la lista")
             return
         
-        if messagebox.askyesno("Confirmar", f"¿Esta seguro de eliminar a {persona['nombre']}?"):
-            # Registrar en historial antes de eliminar
+        # MEJORA 6: Usar confirmación mejorada con más información
+        monto_pagado = sum(pago['monto'] for pago in persona.get('pagos', []))
+        monto_esperado = persona.get('monto_esperado', 100)
+        
+        if ConfirmacionMejorada.confirmar_eliminacion(
+            self.root,
+            nombre_persona=persona['nombre'],
+            folio=persona.get('folio', 'SIN-FOLIO'),
+            total_pagado=monto_pagado,
+            monto_esperado=monto_esperado,
+            tema_global=self.tema_global
+        ):
             usuario = self.usuario_actual['nombre'] if self.usuario_actual else 'Sistema'
+            
+            # BUG FIX #5: Hacer backup seguro ANTES de eliminar
+            try:
+                from src.modules.pagos.pagos_eliminacion_segura import GestorEliminacionSegura
+                GestorEliminacionSegura.hacer_backup_persona(
+                    persona,
+                    motivo='Eliminación por usuario',
+                    usuario=usuario
+                )
+            except Exception as e:
+                registrar_error('control_pagos', 'eliminar_persona_backup', str(e))
+                # Continuar incluso si falla el backup
+            
+            # Registrar en historial antes de eliminar
             self.gestor_historial.registrar_cambio('ELIMINAR', 'PERSONA', persona.get('folio', ''), 
                 {'persona_eliminada': persona}, usuario)
             
@@ -1436,22 +1359,26 @@ class SistemaControlPagos:
                 'cooperacion': self.cooperacion_actual or 'Sin nombre',
                 'folio': persona.get('folio', 'SIN-FOLIO'),
                 'nombre': persona['nombre'],
-                'monto_esperado': f"${persona.get('monto_esperado', 0):.2f}",
-                'pagado': f"${sum(pago['monto'] for pago in persona.get('pagos', [])):.2f}",
+                'monto_esperado': f"${monto_esperado:.2f}",
+                'pagado': f"${monto_pagado:.2f}",
                 'usuario': usuario
             }, usuario)
             
-            # Ya está registrado en gestor_historial arriba
-            
+            # Eliminar después de guardar backup
             self.personas.pop(index)
             self.actualizar_tabla()
             self.actualizar_totales()
-            messagebox.showinfo("Exito", "Persona eliminada correctamente")
+            
+            # Guardar cambios inmediatamente
+            self.guardar_datos(mostrar_alerta=False, inmediato=True)
+            
+            messagebox.showinfo("Exito", f"Persona '{persona['nombre']}' eliminada correctamente.\nSus datos han sido guardados en auditoría.")
     
     def registrar_pago(self):
         """Registrar un pago (puede ser parcial)"""
         if not self._tiene_permiso('pagar'):
             return
+        
         seleccion = self.tree.selection()
         if not seleccion:
             messagebox.showwarning("Advertencia", "Por favor seleccione una persona")
@@ -1463,183 +1390,71 @@ class SistemaControlPagos:
             messagebox.showerror("Error", "No se pudo localizar la persona seleccionada")
             return
         
-        # Calcular cuánto falta
-        total_pagado = sum(pago['monto'] for pago in persona.get('pagos', []))
+        # Obtener monto esperado
         monto_esperado = persona.get('monto_esperado', persona.get('monto', 100))
-        pendiente = monto_esperado - total_pagado
         
-        if pendiente <= 0:
-            messagebox.showinfo("Informacion", "Esta persona ya completo su pago")
-            return
-        
-        # Diálogo para registrar pago
-        dialog = tk.Toplevel(self.root)
-        dialog.title("Registrar Pago")
-        dialog.geometry("520x420")
-        dialog.transient(self.root)
-        dialog.grab_set()
-        
-        tamaños = self.obtener_tamaños()
-        colores = self.obtener_colores()
-        tema_visual = self.tema_global
-        dialog.configure(bg=tema_visual['bg_principal'])
-
-        header = tk.Frame(dialog, bg=tema_visual['bg_secundario'])
-        header.pack(fill=tk.X, padx=14, pady=(14, 10))
-        tk.Label(header, text=ICONOS['usuario'], font=('Segoe UI', 28),
-                 bg=tema_visual['bg_secundario'], fg=tema_visual['accent_primary']).pack(side=tk.LEFT, padx=(0, 12))
-        info_text = tk.Frame(header, bg=tema_visual['bg_secundario'])
-        info_text.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        tk.Label(info_text, text=persona['nombre'], font=FUENTES['titulo'],
-                 bg=tema_visual['bg_secundario'], fg=tema_visual['fg_principal']).pack(anchor=tk.W)
-        tk.Label(info_text, text=f"Folio {persona.get('folio', 'SIN-FOLIO')}", font=FUENTES['pequeño'],
-                 bg=tema_visual['bg_secundario'], fg=tema_visual['fg_secundario']).pack(anchor=tk.W)
-
-        resumen = tk.Frame(dialog, bg=tema_visual['bg_principal'])
-        resumen.pack(fill=tk.X, padx=16, pady=(4, 12))
-        def chip(parent, label, valor, color_fg):
-            cont = tk.Frame(parent, bg=tema_visual['bg_secundario'], padx=10, pady=8)
-            cont.pack(side=tk.LEFT, padx=6, fill=tk.X, expand=True)
-            tk.Label(cont, text=label, font=FUENTES['pequeño'],
-                     bg=tema_visual['bg_secundario'], fg=tema_visual['fg_secundario']).pack(anchor=tk.W)
-            tk.Label(cont, text=valor, font=FUENTES['titulo'],
-                     bg=tema_visual['bg_secundario'], fg=color_fg).pack(anchor=tk.W)
-        chip(resumen, "Esperado", f"${monto_esperado:.2f}", tema_visual['fg_principal'])
-        chip(resumen, "Pagado", f"${total_pagado:.2f}", tema_visual['success'])
-        chip(resumen, "Pendiente", f"${pendiente:.2f}", tema_visual['error'])
-
-        form = tk.Frame(dialog, bg=tema_visual['bg_principal'])
-        form.pack(fill=tk.BOTH, expand=True, padx=16, pady=(0, 12))
-        tk.Label(form, text="Monto de este pago", font=FUENTES['subtitulo'],
-                 bg=tema_visual['bg_principal'], fg=tema_visual['fg_principal']).pack(anchor=tk.W, pady=(0, 6))
-        monto_var = tk.DoubleVar(value=pendiente)
-        monto_entry = tk.Entry(form, textvariable=monto_var, font=FUENTES['titulo'], width=18,
-                               bg=tema_visual['input_bg'], fg=tema_visual['fg_principal'],
-                               relief=tk.SOLID, bd=1, insertbackground=tema_visual['accent_primary'])
-        monto_entry.pack(anchor=tk.W, pady=(0, 10))
-        tk.Label(form, text="Puedes registrar pagos parciales. Si ingresas más que el pendiente se te pedirá confirmar.",
-                 font=FUENTES['pequeño'], bg=tema_visual['bg_principal'], fg=tema_visual['fg_secundario'], wraplength=460,
-                 justify=tk.LEFT).pack(anchor=tk.W)
-        
-        def guardar_pago(event=None):
+        # Callback para cuando se registre el pago exitosamente
+        def on_pago_registrado(persona, monto_pago, nuevo_total, monto_esperado):
+            # Refrescar datos y UI
+            self.actualizar_totales()
+            self.guardar_datos(mostrar_alerta=False)
+            self.actualizar_tabla()
+            
+            # Visual feedback: animar la fila
             try:
-                monto_pago = monto_var.get()
-                
-                # Validar el monto (lanza ErrorValidacion si es invalido)
-                try:
-                    monto_pago = validar_monto(monto_pago)
-                except ErrorValidacion as e:
-                    messagebox.showerror("Error", str(e))
-                    return
-                
-                if monto_pago > pendiente:
-                    if not messagebox.askyesno("Confirmar", 
-                        f"El monto (${monto_pago:.2f}) es mayor al pendiente (${pendiente:.2f}).\n¿Desea continuar?"):
-                        return
-                
-                # Registrar el pago
-                pago = {
-                    'monto': monto_pago,
-                    'fecha': datetime.now().strftime("%d/%m/%Y"),
-                    'hora': datetime.now().strftime("%H:%M:%S"),
-                    'usuario': self.usuario_actual['nombre'] if self.usuario_actual else 'Sistema'
-                }
-                
-                if 'pagos' not in persona:
-                    persona['pagos'] = []
-                
-                persona['pagos'].append(pago)
-
-                # Registrar en historial de auditoría
-                cambios_hist = {
-                    'monto': monto_pago,
-                    'total_anterior': total_pagado,
-                    'total_nuevo': total_pagado + monto_pago,
-                    'pendiente_anterior': pendiente,
-                    'pendiente_nuevo': max(0, pendiente - monto_pago),
-                    # Incluir nombre para que el historial pueda mostrarlo
-                    'nombre': persona.get('nombre', '')
-                }
-                self.gestor_historial.registrar_cambio(
-                    'PAGO',
-                    'PERSONA',
-                    persona.get('folio', 'SIN-FOLIO'),
-                    cambios_hist,
-                    self.usuario_actual['nombre'] if self.usuario_actual else 'Sistema'
-                )
-                
-                # Registrar en log
-                registrar_operacion('PAGO_REGISTRADO', 'Pago registrado correctamente', {
-                    'nombre': persona['nombre'],
-                    'folio': persona.get('folio', 'SIN-FOLIO'),
-                    'monto': monto_pago,
-                    'cooperacion': self.cooperacion_actual
-                })
-                
-                # Refrescar datos y UI
-                self.actualizar_totales()
-                self.guardar_datos(mostrar_alerta=False)
-                self.actualizar_tabla()
-                dialog.destroy()
-
-                # Visual feedback: animar la fila (puede cambiar el item tras refresco)
-                nuevo_total = sum(p['monto'] for p in persona['pagos'])
-                try:
-                    new_item = self._persona_iid(persona)
-                    if self.tree.exists(new_item):
-                        if nuevo_total >= monto_esperado:
-                            self.animar_fila_pagada(new_item, "completado")
-                        else:
-                            self.animar_fila_pagada(new_item, "parcial")
-                except Exception as anim_err:
-                    # No interrumpir si solo falla la animación
-                    registrar_error('control_pagos', 'animar_fila_pagada', str(anim_err))
-                
-            except Exception as e:
-                # Mostrar el error inesperado para que no falle silencioso
-                registrar_error('control_pagos', 'registrar_pago', str(e))
-                messagebox.showerror("Error", f"No se pudo registrar el pago: {e}")
+                new_item = self._persona_iid(persona)
+                if self.tree.exists(new_item):
+                    if nuevo_total >= monto_esperado:
+                        self.animar_fila_pagada(new_item, "completado")
+                    else:
+                        self.animar_fila_pagada(new_item, "parcial")
+            except Exception as anim_err:
+                # No interrumpir si solo falla la animación
+                registrar_error('control_pagos', 'animar_fila_pagada', str(anim_err))
         
-        botones = tk.Frame(dialog, bg=tema_visual['bg_principal'])
-        botones.pack(fill=tk.X, pady=18, padx=16)
-        tk.Button(botones, text=f"{ICONOS['guardar']} Registrar", command=guardar_pago,
-              font=FUENTES['botones'], bg=tema_visual['accent_primary'], fg='#ffffff',
-              relief=tk.FLAT, padx=16, pady=10, cursor='hand2',
-              activebackground=tema_visual['accent_secondary']).pack(side=tk.LEFT, padx=(0, 10), expand=True, fill=tk.X)
-        tk.Button(botones, text=f"{ICONOS['cerrar']} Cancelar", command=dialog.destroy,
-              font=FUENTES['botones'], bg=tema_visual['error'], fg='#ffffff',
-              relief=tk.FLAT, padx=14, pady=10, cursor='hand2',
-              activebackground='#bb2d3b').pack(side=tk.LEFT, expand=True, fill=tk.X)
-        dialog.bind("<Return>", guardar_pago)
-        monto_entry.focus()
-        monto_entry.select_range(0, tk.END)
+        # Mostrar diálogo
+        DialogoRegistrarPago.mostrar(
+            parent=self.root,
+            persona=persona,
+            monto_esperado=monto_esperado,
+            gestor_historial=self.gestor_historial,
+            usuario_actual=self.usuario_actual,
+            callback_ok=on_pago_registrado,
+            cooperacion_actual=self.cooperacion_actual,
+            tema_global=self.tema_global
+        )
     
     def animar_fila_pagada(self, item, tipo='completado'):
-        """Animar la fila con pulso de color"""
-        colores = self.obtener_colores()
-        colores_pulso = [
-            tema_visual['success'] if tipo == 'completado' else tema_visual['warning'],
-            tema_visual['fg_principal']
-        ]
+        """Animar la fila con pulso de color - BUG FIX #1: Usa GestorEstadoPago"""
+        from src.modules.pagos.pagos_estado import GestorEstadoPago
+        
+        tema_visual = self.obtener_colores()
         
         def pulso(idx=0):
             if idx < 4:
-                # Cambiar color de texto
+                # Cambiar color de texto durante animación
                 self.tree.item(item, tags=('pago_ok' if tipo == 'completado' else 'pago_parcial',))
                 self.root.after(150, lambda: pulso(idx + 1))
             else:
-                # Restaurar color normal
+                # Restaurar color normal basado en estado ACTUAL (BUG FIX #1)
                 persona = self.tree_persona_map.get(item)
                 if not persona:
                     return
+                
                 total_pagado = sum(p['monto'] for p in persona.get('pagos', []))
                 monto_esperado = persona.get('monto_esperado', 100)
-                if total_pagado >= monto_esperado:
-                    self.tree.item(item, tags=('pagado',))
-                elif total_pagado > 0:
-                    self.tree.item(item, tags=('parcial',))
-                else:
-                    self.tree.item(item, tags=('pendiente',))
+                
+                # Usar GestorEstadoPago para obtener estado consistente
+                estado_clave = GestorEstadoPago.obtener_estado(total_pagado, monto_esperado)
+                
+                tag_estado_map = {
+                    'completado': 'pagado',
+                    'excedente': 'pagado',
+                    'parcial': 'parcial',
+                    'pendiente': 'pendiente'
+                }
+                tag = tag_estado_map.get(estado_clave, 'pendiente')
+                self.tree.item(item, tags=(tag,))
         
         pulso()
     
@@ -1656,81 +1471,59 @@ class SistemaControlPagos:
             messagebox.showerror("Error", "No se pudo localizar la persona seleccionada")
             return
         
-        # Ventana de historial
-        dialog = tk.Toplevel(self.root)
-        dialog.title(f"Historial de Pagos - {persona['nombre']}")
-        dialog.geometry("600x400")
-        dialog.transient(self.root)
-        
-        ttk.Label(dialog, text=f"Historial de {persona['nombre']}", 
-                 font=('Arial', 14, 'bold')).pack(pady=10)
-        
-        ttk.Label(dialog, text=f"Folio: {persona.get('folio', 'SIN-FOLIO')}", 
-                 font=('Arial', 10, 'italic')).pack()
-        
-        monto_esperado = persona.get('monto_esperado', persona.get('monto', 100))
-        total_pagado = sum(pago['monto'] for pago in persona.get('pagos', []))
-        
-        info_frame = ttk.Frame(dialog)
-        info_frame.pack(pady=10, padx=20, fill=tk.X)
-        
-        ttk.Label(info_frame, text=f"Monto Esperado: ${monto_esperado:.2f}", 
-                 font=('Arial', 11, 'bold')).pack(anchor=tk.W)
-        ttk.Label(info_frame, text=f"Total Pagado: ${total_pagado:.2f}", 
-                 font=('Arial', 11, 'bold'), foreground='green').pack(anchor=tk.W)
-        ttk.Label(info_frame, text=f"Pendiente: ${max(0, monto_esperado - total_pagado):.2f}", 
-                 font=('Arial', 11, 'bold'), foreground='red').pack(anchor=tk.W)
-        
-        # Tabla de pagos
-        frame = ttk.Frame(dialog)
-        frame.pack(pady=10, padx=20, fill=tk.BOTH, expand=True)
-        
-        scrollbar = ttk.Scrollbar(frame)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        
-        tree_hist = ttk.Treeview(frame, columns=('num', 'monto', 'fecha', 'hora'), 
-                                 show='headings', yscrollcommand=scrollbar.set)
-        
-        tree_hist.heading('num', text='#')
-        tree_hist.heading('monto', text='Monto')
-        tree_hist.heading('fecha', text='Fecha')
-        tree_hist.heading('hora', text='Hora')
-        
-        tree_hist.column('num', width=50, anchor=tk.CENTER)
-        tree_hist.column('monto', width=100, anchor=tk.CENTER)
-        tree_hist.column('fecha', width=100, anchor=tk.CENTER)
-        tree_hist.column('hora', width=100, anchor=tk.CENTER)
-        
-        tree_hist.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scrollbar.config(command=tree_hist.yview)
-        
-        # Llenar datos
-        for i, pago in enumerate(persona.get('pagos', []), 1):
-            tree_hist.insert('', tk.END, values=(
-                i,
-                f"${pago['monto']:.2f}",
-                pago['fecha'],
-                pago['hora']
-            ))
-        
-        if not persona.get('pagos'):
-            ttk.Label(dialog, text="No hay pagos registrados", 
-                     font=('Arial', 10, 'italic')).pack(pady=10)
-        
-        ttk.Button(dialog, text="Cerrar", command=dialog.destroy).pack(pady=10)
+        DialogoVerHistorial.mostrar(self.root, persona)
     
     def buscar_tiempo_real(self):
-        """Busqueda en tiempo real"""
+        """MEJORA 3: Búsqueda en tiempo real CON DEBOUNCE (180ms)"""
+        # Cancelar búsqueda anterior si existe
+        if hasattr(self, '_timer_busqueda') and self._timer_busqueda:
+            self.root.after_cancel(self._timer_busqueda)
+        
+        # Programar nueva búsqueda con debounce de 180ms
+        self._timer_busqueda = self.root.after(180, self._ejecutar_busqueda)
+    
+    def _ejecutar_busqueda(self):
+        """Ejecuta la búsqueda real después del debounce"""
+        self._timer_busqueda = None
         self.actualizar_tabla()
+        # Actualizar contador de resultados
+        self._actualizar_contador_resultados()
+    
+    def _actualizar_contador_resultados(self):
+        """Muestra el contador de resultados de búsqueda en la barra de estado"""
+        criterio = self.search_box.get().strip().lower() if hasattr(self, 'search_box') else ''
+        
+        if criterio:
+            resultados = [p for p in self.personas 
+                         if criterio in p['nombre'].lower() or 
+                         criterio in p.get('folio', '').lower()]
+            total = len(self.personas)
+            encontrados = len(resultados)
+            
+            if hasattr(self, 'barra_estado') and self.barra_estado:
+                self.barra_estado.actualizar_sync(f"Búsqueda: {encontrados} de {total}")
+        else:
+            # Sin búsqueda activa
+            if hasattr(self, 'barra_estado') and self.barra_estado:
+                self.barra_estado.actualizar_sync("Sincronizado")
     
     def limpiar_busqueda(self):
         """Limpiar busqueda"""
         if hasattr(self, 'search_box'):
             self.search_box.clear()
         self.actualizar_tabla()
+        self._actualizar_contador_resultados()
     
     def actualizar_tabla(self):
-        # Limpiar tabla
+        # Importar GestorEstadoPago para usar lógica centralizada (BUG FIX #1 y #4)
+        from src.modules.pagos.pagos_estado import GestorEstadoPago
+        
+        # Limpiar tabla pero guardar selección actual (BUG FIX #6)
+        seleccion_anterior = self.tree.selection()
+        persona_seleccionada = None
+        if seleccion_anterior:
+            persona_seleccionada = self.tree_persona_map.get(seleccion_anterior[0])
+        
         for item in self.tree.get_children():
             self.tree.delete(item)
         self.tree_persona_map = {}
@@ -1741,8 +1534,8 @@ class SistemaControlPagos:
         
         if criterio:
             personas_mostrar = [p for p in self.personas 
-                               if criterio in p['nombre'].lower() or 
-                               criterio in p.get('folio', '').lower()]
+                               if criterio in p.get('nombre', 'SIN-NOMBRE').lower() or 
+                               criterio in p.get('folio', 'SIN-FOLIO').lower()]
         
         # Agregar personas
         for idx, persona in enumerate(personas_mostrar):
@@ -1753,24 +1546,28 @@ class SistemaControlPagos:
                 persona['pagos'] = []
             if 'folio' not in persona:
                 persona['folio'] = 'SIN-FOLIO'
+            if 'nombre' not in persona:
+                persona['nombre'] = 'SIN-NOMBRE'
             
             monto_esperado = persona['monto_esperado']
             total_pagado = sum(pago['monto'] for pago in persona['pagos'])
             pendiente = max(0, monto_esperado - total_pagado)
             
-            # Determinar estado y símbolo indicador
-            if total_pagado >= monto_esperado:
-                estado = 'Pagado'
-                tag = 'pagado'
-                indicador = '● '  # Círculo lleno para pagado
-            elif total_pagado > 0:
-                estado = 'Parcial'
-                tag = 'parcial'
-                indicador = '◐ '  # Semicírculo para parcial
-            else:
-                estado = 'Pendiente'
-                tag = 'pendiente'
-                indicador = '○ '  # Círculo vacío para pendiente
+            # BUG FIX #1 y #4: Usar GestorEstadoPago centralizado para determinar estado
+            estado_clave = GestorEstadoPago.obtener_estado(total_pagado, monto_esperado)
+            datos_estado = GestorEstadoPago.obtener_datos_estado(estado_clave)
+            
+            estado = datos_estado['nombre']
+            indicador = datos_estado['emoji'] + ' '
+            
+            # Mapear estado a tag de color
+            tag_estado_map = {
+                'completado': 'pagado',
+                'excedente': 'pagado',
+                'parcial': 'parcial',
+                'pendiente': 'pendiente'
+            }
+            tag = tag_estado_map.get(estado_clave, 'pendiente')
             
             # Obtener fecha del último pago
             ultimo_pago = ''
@@ -1792,6 +1589,10 @@ class SistemaControlPagos:
                                   persona.get('notas', '')),
                            tags=(row_tag,))  # Solo tag de fila, sin tag de color
             self.tree_persona_map[iid] = persona
+            
+            # BUG FIX #6: Restaurar selección si era la misma persona
+            if persona_seleccionada and persona == persona_seleccionada:
+                self.tree.selection_set(iid)
         
         # Actualizar contador de personas
         total_mostradas = len(personas_mostrar)
@@ -1811,6 +1612,165 @@ class SistemaControlPagos:
             self.menu_persona.tk_popup(event.x_root, event.y_root)
         finally:
             self.menu_persona.grab_release()
+    
+    def _on_tree_double_click(self, event):
+        """MEJORA 2: Doble clic en fila abre diálogo de pago directo"""
+        iid = self.tree.identify_row(event.y)
+        if not iid:
+            return
+        self.tree.selection_set(iid)
+        # Abrir diálogo de pago directamente
+        self.registrar_pago()
+    
+    def _on_tree_heading_click(self, event):
+        """BUGFIX: Clic en header de columna para ordenamiento - SOLO si checkbox está activo"""
+        # Identificar si se hizo clic en un heading
+        col = self.tree.identify_column(event.x)
+        region = self.tree.identify_region(event.x, event.y)
+        
+        # BUGFIX: Solo procesar si fue click en un heading (no en fila)
+        if region != 'heading':
+            return
+        
+        if col == '#0':  # Clic en columna de árbol, ignorar
+            return
+        
+        # BUGFIX: Solo permitir ordenamiento si el checkbox está activado
+        if not hasattr(self, 'habilitar_ordenamiento_var') or not self.habilitar_ordenamiento_var.get():
+            return
+        
+        # Mapear número de columna a nombre de columna
+        col_num = int(col[1:]) - 1
+        columnas = ('folio', 'nombre', 'monto_esperado', 'pagado', 'pendiente', 'estado', 'ultimo_pago', 'notas')
+        
+        if col_num < 0 or col_num >= len(columnas):
+            return
+        
+        col_name = columnas[col_num]
+        
+        # BUGFIX: Solo permitir ordenamiento por columnas específicas - silenciosamente ignorar otros
+        columnas_permitidas = ('pagado', 'pendiente', 'ultimo_pago')
+        if col_name not in columnas_permitidas:
+            # Silenciosamente ignorar clics en otras columnas en lugar de mostrar alerta
+            return
+        
+        # Si se clickea la misma columna, invertir dirección
+        if self.columna_ordenamiento == col_name:
+            self.orden_ascendente = not self.orden_ascendente
+        else:
+            self.columna_ordenamiento = col_name
+            self.orden_ascendente = True
+        
+        # Ordenar y actualizar tabla
+        self._ordenar_tabla_por_columna(col_name)
+    
+    def _ordenar_tabla_por_columna(self, col_name):
+        """Ordena la tabla por la columna especificada y actualiza los headers"""
+        # Convertir datos mostrados a lista para ordenar
+        items_mostrados = list(self.tree.get_children())
+        personas_mostradas = []
+        
+        for iid in items_mostrados:
+            # Encontrar persona correspondiente
+            folio = self.tree.item(iid)['values'][0]
+            for p in self.personas:
+                if p.get('folio', 'SIN-FOLIO') == folio:
+                    personas_mostradas.append(p)
+                    break
+        
+        # Función para obtener valor de ordenamiento
+        def get_sort_key(persona):
+            monto_esperado = persona.get('monto_esperado', 100)
+            pagado = sum(pago['monto'] for pago in persona.get('pagos', []))
+            pendiente = max(0, monto_esperado - pagado)
+            
+            if col_name == 'folio':
+                return persona.get('folio', 'SIN-FOLIO').lower()
+            elif col_name == 'nombre':
+                return persona.get('nombre', '').lower()
+            elif col_name == 'monto_esperado':
+                return float(monto_esperado)
+            elif col_name == 'pagado':
+                return float(pagado)
+            elif col_name == 'pendiente':
+                return float(pendiente)
+            elif col_name == 'estado':
+                if pagado >= monto_esperado:
+                    return 0  # Pagado
+                elif pagado > 0:
+                    return 1  # Parcial
+                else:
+                    return 2  # Pendiente
+            elif col_name == 'ultimo_pago':
+                if persona.get('pagos'):
+                    return persona['pagos'][-1].get('fecha', '')
+                return ''
+            elif col_name == 'notas':
+                return persona.get('notas', '').lower()
+            return ''
+        
+        # Ordenar
+        personas_mostradas.sort(key=get_sort_key, reverse=not self.orden_ascendente)
+        
+        # Guardar orden en lista principal
+        self.personas = personas_mostradas
+        
+        # Actualizar tabla con nuevo orden
+        self.actualizar_tabla()
+        
+        # Actualizar headers con indicadores visuales
+        self._actualizar_headers_ordenamiento(col_name)
+    
+    def _actualizar_headers_ordenamiento(self, col_name):
+        """Actualiza los headers para mostrar columna ordenada con indicador"""
+        columnas = ('folio', 'nombre', 'monto_esperado', 'pagado', 'pendiente', 'estado', 'ultimo_pago', 'notas')
+        textos_originales = ('Folio', 'Nombre Completo', 'Monto Esperado', 'Pagado', 'Pendiente', 'Estado', 'Ultimo Pago', 'Notas')
+        
+        for col, texto in zip(columnas, textos_originales):
+            if col == col_name:
+                # Agregar indicador de orden
+                indicador = ' ▲' if self.orden_ascendente else ' ▼'
+                self.tree.heading(col, text=texto + indicador)
+            else:
+                # Remover indicador
+                self.tree.heading(col, text=texto)
+    
+    def _configurar_atajos_teclado(self):
+        """MEJORA 7: Configura atajos de teclado para acciones comunes"""
+        # Ctrl+F: Enfocar en la caja de búsqueda
+        self.root.bind('<Control-f>', lambda e: self.search_box.entry.focus() if hasattr(self, 'search_box') else None)
+        
+        # Ctrl+P: Registrar pago
+        self.root.bind('<Control-p>', lambda e: self.registrar_pago())
+        
+        # Ctrl+E: Editar persona
+        self.root.bind('<Control-e>', lambda e: self.editar_persona())
+        
+        # Ctrl+H: Ver historial
+        self.root.bind('<Control-h>', lambda e: self.ver_historial_completo())
+        
+        # Ctrl+S: Sincronizar/Guardar
+        self.root.bind('<Control-s>', lambda e: self.sincronizar_coop_con_censo())
+        
+        # F5: Refrescar tabla
+        self.root.bind('<F5>', lambda e: self.actualizar_tabla())
+        
+        # Delete: Eliminar persona seleccionada
+        self.root.bind('<Delete>', lambda e: self.eliminar_persona())
+        
+        # Escape: Limpiar búsqueda
+        self.root.bind('<Escape>', lambda e: self.limpiar_busqueda())
+        
+        # Ctrl+1, Ctrl+2, Ctrl+3: Cambiar entre cooperaciones
+        self.root.bind('<Control-1>', lambda e: self._cambiar_cooperacion_por_indice(0))
+        self.root.bind('<Control-2>', lambda e: self._cambiar_cooperacion_por_indice(1))
+        self.root.bind('<Control-3>', lambda e: self._cambiar_cooperacion_por_indice(2))
+    
+    def _cambiar_cooperacion_por_indice(self, indice):
+        """Cambia a la cooperación en el índice especificado"""
+        if indice < len(self.cooperaciones):
+            self.coop_selector.current(indice)
+            self.on_cambio_cooperacion()
     
     def actualizar_totales(self):
         """Actualizar los totales en el panel de información del proyecto"""
@@ -1845,6 +1805,50 @@ class SistemaControlPagos:
         
         if hasattr(self, 'personas_pagadas_label'):
             self.personas_pagadas_label.config(text=f"{personas_pagadas} de {len(self.personas)}")
+    
+    def actualizar_estado_barra(self):
+        """Actualiza la barra de estado con información del sistema"""
+        # BUGFIX: Verificar que el root y barra_estado existan y sean válidos
+        if not hasattr(self, 'root') or not self.root:
+            return
+        
+        # Verificar que el widget root aún exista en Tk
+        try:
+            # Intenta acceder a una propiedad del widget para verificar que existe
+            self.root.winfo_exists()
+        except:
+            # El widget fue destruido, salir sin reprogramar
+            return
+        
+        if not hasattr(self, 'barra_estado') or not self.barra_estado:
+            return
+        
+        try:
+            # Determinar estado de API
+            api_online = getattr(self, 'api_activa', False)
+            self.barra_estado.actualizar_api(api_online)
+            
+            # Determinar estado de guardado
+            guardado = self.guardado_pendiente is None
+            cambios = 0 if guardado else 1
+            self.barra_estado.actualizar_saved(guardado, cambios)
+            
+            # Actualizar sincronización
+            if len(self.personas) > 0:
+                self.barra_estado.actualizar_sync("Sincronizado")
+            else:
+                self.barra_estado.actualizar_sync("Sin datos")
+        except tk.TclError:
+            # El widget fue destruido durante la actualización, no reprogramar
+            return
+        except Exception as e:
+            # Cualquier otro error, registrar y no reprogramar
+            print(f"[ADVERTENCIA] Error en actualizar_estado_barra: {e}")
+            return
+        
+        # Reprogramar siguiente actualización SOLO si el widget sigue vivo
+        if self.root and self.root.winfo_exists():
+            self._after_id_barra = self.root.after(2000, self.actualizar_estado_barra)
     
     def _persona_iid(self, persona):
         """Devuelve un iid estable para el Treeview basado en el objeto persona"""
@@ -1883,6 +1887,10 @@ class SistemaControlPagos:
             if seguridad.cifrar_archivo(datos, self.archivo_datos, self.password_archivo):
                 if mostrar_alerta:
                     messagebox.showinfo("Exito", "Datos guardados correctamente")
+                # Actualizar barra de estado
+                if hasattr(self, 'barra_estado') and self.barra_estado:
+                    self.barra_estado.mostrar_mensaje_temporal("✓ Guardado", 2)
+                self.actualizar_estado_barra()
             else:
                 if mostrar_alerta:
                     messagebox.showerror("Error", "Error al guardar los datos")
@@ -1989,6 +1997,30 @@ class SistemaControlPagos:
         from src.modules.historial.ventana_historial import VentanaHistorial
         # Pasar el gestor_historial de la aplicación para que use los datos actuales
         VentanaHistorial(self.root, gestor_historial=self.gestor_historial)
+    
+    def _auditar_coherencia_inicial(self):
+        """BUGFIX: Auditar coherencia de cooperaciones al iniciar - sin romper UI"""
+        try:
+            from src.modules.pagos.pagos_validador_coherencia import ValidadorCoherenciaCooperaciones
+            
+            # Ejecutar auditoría silenciosa
+            informe = ValidadorCoherenciaCooperaciones.auditar_integridad_completa(self.cooperaciones)
+            
+            # Registrar resultado
+            if informe['estado'] != 'OK':
+                registrar_operacion(
+                    'AUDITORÍA_INICIAL',
+                    f"Auditoría de coherencia: {informe['estado']}",
+                    informe['resumen']
+                )
+            
+            # Si hay advertencias importantes, registrar pero no mostrar popup (para no bloquear UI)
+            if informe['recomendaciones']:
+                for recomendación in informe['recomendaciones'][:3]:  # Log solo primeras 3
+                    registrar_error('AUDITORÍA_COOPERACIONES', recomendación)
+        
+        except Exception as e:
+            registrar_error('_auditar_coherencia_inicial', str(e))
     
     def cerrar_aplicacion(self):
         """Cerrar aplicación con backup automático silencioso"""

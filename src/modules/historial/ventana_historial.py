@@ -81,14 +81,40 @@ class VentanaHistorial:
         entidad_combo.set('Todas')
         entidad_combo.pack(side=tk.LEFT, padx=5)
         
-        ttk.Label(row1, text="Fecha:").pack(side=tk.LEFT, padx=(20, 5))
-        self.fecha_var = tk.StringVar()
-        fecha_entry = ttk.Entry(row1, textvariable=self.fecha_var, width=12)
-        fecha_entry.pack(side=tk.LEFT, padx=5)
-        ttk.Label(row1, text="(DD/MM/YYYY)", font=('Arial', 8, 'italic')).pack(side=tk.LEFT, padx=5)
+        ttk.Label(row1, text="Usuario:").pack(side=tk.LEFT, padx=(20, 5))
+        self.usuario_var = tk.StringVar()
+        # Obtener lista de usuarios únicos del historial
+        usuarios = set(r.get('usuario', '') for r in self.gestor_historial.historial if r.get('usuario'))
+        usuarios_lista = ['Todos'] + sorted(usuarios)
+        usuario_combo = ttk.Combobox(row1, textvariable=self.usuario_var,
+                                     values=usuarios_lista,
+                                     state='readonly', width=15)
+        usuario_combo.set('Todos')
+        usuario_combo.pack(side=tk.LEFT, padx=5)
         
-        ttk.Button(row1, text="🔍 Filtrar", command=self.aplicar_filtros, width=12).pack(side=tk.LEFT, padx=(20, 5))
-        ttk.Button(row1, text="🔄 Limpiar", command=self.limpiar_filtros, width=12).pack(side=tk.LEFT, padx=5)
+        # Segunda fila de filtros
+        row2 = ttk.Frame(filtros_frame)
+        row2.pack(fill=tk.X, pady=5)
+        
+        ttk.Label(row2, text="Desde:").pack(side=tk.LEFT, padx=5)
+        self.fecha_desde_var = tk.StringVar()
+        fecha_desde_entry = ttk.Entry(row2, textvariable=self.fecha_desde_var, width=12)
+        fecha_desde_entry.pack(side=tk.LEFT, padx=5)
+        
+        ttk.Label(row2, text="Hasta:").pack(side=tk.LEFT, padx=(20, 5))
+        self.fecha_hasta_var = tk.StringVar()
+        fecha_hasta_entry = ttk.Entry(row2, textvariable=self.fecha_hasta_var, width=12)
+        fecha_hasta_entry.pack(side=tk.LEFT, padx=5)
+        ttk.Label(row2, text="(DD/MM/YYYY)", font=('Arial', 8, 'italic')).pack(side=tk.LEFT, padx=5)
+        
+        ttk.Label(row2, text="Búsqueda:").pack(side=tk.LEFT, padx=(20, 5))
+        self.busqueda_var = tk.StringVar()
+        busqueda_entry = ttk.Entry(row2, textvariable=self.busqueda_var, width=25)
+        busqueda_entry.pack(side=tk.LEFT, padx=5)
+        busqueda_entry.bind('<KeyRelease>', lambda e: self.aplicar_filtros())
+        
+        ttk.Button(row2, text="🔍 Filtrar", command=self.aplicar_filtros, width=12).pack(side=tk.LEFT, padx=(20, 5))
+        ttk.Button(row2, text="🔄 Limpiar", command=self.limpiar_filtros, width=12).pack(side=tk.LEFT, padx=5)
         
         # Label de info
         self.info_label = ttk.Label(main_frame, text="", font=FUENTES['pequeño'])
@@ -243,12 +269,55 @@ class VentanaHistorial:
         if self.entidad_var.get() and self.entidad_var.get() != 'Todas':
             resultado = [r for r in resultado if r.get('entidad') == self.entidad_var.get()]
         
-        # Filtrar por fecha
-        if self.fecha_var.get():
-            fecha_buscar = self.fecha_var.get()
-            resultado = [r for r in resultado if r.get('fecha') == fecha_buscar]
+        # Filtrar por usuario
+        if hasattr(self, 'usuario_var') and self.usuario_var.get() and self.usuario_var.get() != 'Todos':
+            resultado = [r for r in resultado if r.get('usuario') == self.usuario_var.get()]
+        
+        # Filtrar por rango de fechas
+        if hasattr(self, 'fecha_desde_var') and self.fecha_desde_var.get():
+            try:
+                fecha_desde = datetime.strptime(self.fecha_desde_var.get(), '%d/%m/%Y')
+                resultado = [r for r in resultado if self._comparar_fecha(r.get('fecha', ''), fecha_desde, '>=')]
+            except:
+                pass
+        
+        if hasattr(self, 'fecha_hasta_var') and self.fecha_hasta_var.get():
+            try:
+                fecha_hasta = datetime.strptime(self.fecha_hasta_var.get(), '%d/%m/%Y')
+                resultado = [r for r in resultado if self._comparar_fecha(r.get('fecha', ''), fecha_hasta, '<=')]
+            except:
+                pass
+        
+        # Filtrar por búsqueda general
+        if hasattr(self, 'busqueda_var') and self.busqueda_var.get():
+            busqueda = self.busqueda_var.get().lower()
+            resultado = [r for r in resultado if self._contiene_busqueda(r, busqueda)]
         
         return resultado
+    
+    def _comparar_fecha(self, fecha_str, fecha_ref, operador):
+        """Comparar fechas con operador específico"""
+        try:
+            fecha = datetime.strptime(fecha_str, '%d/%m/%Y')
+            if operador == '>=':
+                return fecha >= fecha_ref
+            elif operador == '<=':
+                return fecha <= fecha_ref
+            return False
+        except:
+            return False
+    
+    def _contiene_busqueda(self, registro, busqueda):
+        """Verificar si el registro contiene la búsqueda"""
+        campos_buscar = [
+            str(registro.get('tipo', '')),
+            str(registro.get('entidad', '')),
+            str(registro.get('id_entidad', '')),
+            str(registro.get('usuario', '')),
+            str(self.crear_resumen(registro))
+        ]
+        texto_completo = ' '.join(campos_buscar).lower()
+        return busqueda in texto_completo
     
     def crear_resumen(self, registro):
         """Crear resumen legible del cambio"""
@@ -357,7 +426,14 @@ CAMBIOS REALIZADOS:
         """Limpiar filtros"""
         self.tipo_var.set('Todos')
         self.entidad_var.set('Todas')
-        self.fecha_var.set('')
+        if hasattr(self, 'usuario_var'):
+            self.usuario_var.set('Todos')
+        if hasattr(self, 'fecha_desde_var'):
+            self.fecha_desde_var.set('')
+        if hasattr(self, 'fecha_hasta_var'):
+            self.fecha_hasta_var.set('')
+        if hasattr(self, 'busqueda_var'):
+            self.busqueda_var.set('')
         self.cargar_historial()
     
     def exportar_historial(self):

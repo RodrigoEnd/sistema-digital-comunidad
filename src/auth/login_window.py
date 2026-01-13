@@ -177,26 +177,6 @@ class VentanaLogin:
         exit_btn.bind('<Enter>', lambda e: e.widget.config(bg=tema['border']))
         exit_btn.bind('<Leave>', lambda e: e.widget.config(bg=tema['bg_tertiary']))
         
-        # Info de demostración en el footer
-        footer_frame = tk.Frame(self.root, bg=tema['bg_principal'])
-        footer_frame.pack(side=tk.BOTTOM, pady=ESPACIADO['lg'])
-        
-        info_card = tk.Frame(footer_frame, bg=tema['info_light'], 
-                           relief=tk.FLAT, bd=1, highlightthickness=1,
-                           highlightbackground=tema['info'])
-        info_card.pack(padx=ESPACIADO['xl'])
-        
-        info_inner = tk.Frame(info_card, bg=tema['info_light'])
-        info_inner.pack(padx=ESPACIADO['lg'], pady=ESPACIADO['md'])
-        
-        tk.Label(info_inner, text=f"{ICONOS['info']} Demo", 
-                font=FUENTES['badge'],
-                bg=tema['info_light'], fg=tema['info']).pack(anchor=tk.W)
-        
-        tk.Label(info_inner, text="Usuario: admin  |  Contraseña: admin123",
-                font=FUENTES['pequeño'], 
-                bg=tema['info_light'], fg=tema['info']).pack()
-        
         # Bindings
         self.usuario_entry.bind('<Return>', lambda e: self.password_entry.focus())
         self.password_entry.bind('<Return>', lambda e: self.intentar_login())
