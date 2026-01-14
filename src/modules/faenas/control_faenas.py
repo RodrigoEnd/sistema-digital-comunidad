@@ -81,7 +81,12 @@ class SistemaFaenas:
             'registrar_pago': self.registrar_pago_en_lugar,
             'eliminar_participante': self.eliminar_participante,
             'actualizar_resumen': self.actualizar_resumen_anual,
-            'toggle_resumen': self._toggle_panel_resumen
+            'toggle_resumen': self._toggle_panel_resumen,
+            'obtener_datos_dashboard': self._obtener_datos_dashboard,
+            'busqueda_avanzada': self._filtrar_busqueda_avanzada,
+            'ver_detalles': self.ver_detalles_faena,
+            'editar_faena': self.editar_faena,
+            'eliminar_faena': self.eliminar_faena_seleccionada
         }
 
         self.ui_manager = FaenasUIManager(self.root, self.usuario_actual, callbacks)
@@ -584,6 +589,114 @@ class SistemaFaenas:
         except Exception:
             return fecha_iso
 
+    def _toggle_panel_resumen(self) -> None:
+        """Alternar visibilidad del panel resumen"""
+        pass
+
+    def _obtener_datos_dashboard(self) -> Dict:
+        """Obtener datos para el dashboard KPI"""
+        ahora = datetime.now()
+        mes_actual = ahora.month
+        anio_actual = ahora.year
+        
+        faenas_mes = [f for f in self.faenas 
+                     if self._pertenece_a_mes(f.get('fecha', ''), mes_actual, anio_actual)]
+        
+        horas_totales = sum([sum([p.get('horas_trabajadas', 0) 
+                                 for p in f.get('participantes', [])]) 
+                            for f in faenas_mes])
+        
+        participantes = set()
+        for faena in faenas_mes:
+            for part in faena.get('participantes', []):
+                participantes.add(part.get('nombre'))
+        
+        pendiente = sum([f.get('peso', 0) * 50 for f in faenas_mes if f.get('estado') != 'pagada'])
+        completadas = len([f for f in faenas_mes if f.get('estado') != 'registrada'])
+        promedio = horas_totales / len(faenas_mes) if faenas_mes else 0
+        
+        return {
+            'faenas_mes': len(faenas_mes),
+            'horas_mes': horas_totales,
+            'participantes': len(participantes),
+            'pendiente_pago': pendiente,
+            'completadas': completadas,
+            'promedio_horas': promedio
+        }
+
+    def _filtrar_busqueda_avanzada(self, filtros: Dict) -> None:
+        """Filtrar faenas con búsqueda avanzada"""
+        resultados = []
+        
+        for faena in self.faenas:
+            cumple = True
+            
+            if filtros.get('fecha') and faena.get('fecha') != filtros['fecha']:
+                cumple = False
+            if filtros.get('participante'):
+                participantes = [p.get('nombre', '').lower() for p in faena.get('participantes', [])]
+                if not any(filtros['participante'].lower() in p for p in participantes):
+                    cumple = False
+            if filtros.get('peso_min') and faena.get('peso', 0) < filtros['peso_min']:
+                cumple = False
+            if filtros.get('estado') and faena.get('estado') != filtros['estado']:
+                cumple = False
+            
+            if cumple:
+                resultados.append(faena)
+        
+        if self.ui_manager and self.ui_manager.tree_faenas:
+            for item in self.ui_manager.tree_faenas.get_children():
+                self.ui_manager.tree_faenas.delete(item)
+            
+            for faena in resultados:
+                estado = faena.get('estado', 'registrada').lower()
+                self.ui_manager.tree_faenas.insert('', 'end', values=(
+                    faena.get('fecha', ''),
+                    faena.get('nombre', ''),
+                    f"{faena.get('peso', 0):.1f}",
+                    len(faena.get('participantes', [])),
+                    faena.get('estado', 'Registrada').capitalize()
+                ), tags=(estado,))
+
+    def _pertenece_a_mes(self, fecha_str: str, mes: int, anio: int) -> bool:
+        """Verificar si una fecha pertenece a un mes y año específico"""
+        if not fecha_str:
+            return False
+        try:
+            partes = fecha_str.split('/')
+            return int(partes[1]) == mes and int(partes[2]) == anio
+        except:
+            return False
+
+    def ver_detalles_faena(self) -> None:
+        """Ver detalles de la faena seleccionada"""
+        if self.faena_seleccionada:
+            detalles = f"Faena: {self.faena_seleccionada.get('nombre')}\n"
+            detalles += f"Fecha: {self.faena_seleccionada.get('fecha')}\n"
+            detalles += f"Peso: {self.faena_seleccionada.get('peso')}\n"
+            detalles += f"Participantes: {len(self.faena_seleccionada.get('participantes', []))}"
+            messagebox.showinfo("Detalles de faena", detalles)
+
+    def editar_faena(self) -> None:
+        """Editar la faena seleccionada"""
+        if not self.faena_seleccionada:
+            messagebox.showwarning("Advertencia", "Debe seleccionar una faena")
+            return
+        messagebox.showinfo("Editar", "Funcionalidad en desarrollo")
+
+    def eliminar_faena_seleccionada(self) -> None:
+        """Eliminar la faena seleccionada"""
+        if not self.faena_seleccionada:
+            messagebox.showwarning("Advertencia", "Debe seleccionar una faena")
+            return
+        
+        if messagebox.askyesno("Confirmar", "Desea eliminar esta faena?"):
+            self.faenas.remove(self.faena_seleccionada)
+            self.repo.guardar(self.faenas)
+            self.actualizar_listado_faenas()
+            messagebox.showinfo("Exito", "Faena eliminada correctamente")
+
 
 def main():
     """Punto de entrada principal con autenticación"""
@@ -598,7 +711,6 @@ def main():
         root = tk.Tk()
         root.title(f"Registro de Faenas - {usuario['nombre']} ({usuario['rol']})")
 
-        # Permitir pasar año por defecto via argumentos (--anio 2025)
         default_year = None
         try:
             args = sys.argv[1:]

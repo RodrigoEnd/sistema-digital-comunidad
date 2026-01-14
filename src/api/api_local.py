@@ -8,7 +8,24 @@ proyecto_raiz = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 if proyecto_raiz not in sys.path:
     sys.path.insert(0, proyecto_raiz)
 
-from src.core.base_datos import db
+# NO cargar la BD al import time - hacerlo lazy
+db = None
+
+def obtener_db():
+    """Obtener instancia de BD (lazy loading)"""
+    global db
+    if db is None:
+        try:
+            from src.core.base_datos import BaseDatos
+            db = BaseDatos()
+        except Exception as e:
+            print(f"ERROR al inicializar BD: {e}", file=sys.stderr)
+            # Retornar un objeto dummy para que el ping siga funcionando
+            class BDDummy:
+                def obtener_todos(self):
+                    return []
+            db = BDDummy()
+    return db
 
 app = Flask(__name__)
 CORS(app)  # Permitir conexiones locales entre aplicaciones
@@ -16,17 +33,19 @@ CORS(app)  # Permitir conexiones locales entre aplicaciones
 @app.route('/api/habitantes', methods=['GET'])
 def obtener_habitantes():
     """Obtener todos los habitantes"""
+    db_inst = obtener_db()
     return jsonify({
         'success': True,
-        'habitantes': db.obtener_todos(),
-        'total': len(db.obtener_todos())
+        'habitantes': db_inst.obtener_todos(),
+        'total': len(db_inst.obtener_todos())
     })
 
 @app.route('/api/habitantes/buscar', methods=['GET'])
 def buscar_habitantes():
     """Buscar habitantes por criterio"""
+    db_inst = obtener_db()
     criterio = request.args.get('q', '')
-    resultados = db.buscar_habitante(criterio)
+    resultados = db_inst.buscar_habitante(criterio)
     
     return jsonify({
         'success': True,
@@ -37,7 +56,8 @@ def buscar_habitantes():
 @app.route('/api/habitantes/nombre/<nombre>', methods=['GET'])
 def obtener_por_nombre(nombre):
     """Obtener habitante por nombre exacto"""
-    habitante = db.obtener_habitante_por_nombre(nombre)
+    db_inst = obtener_db()
+    habitante = db_inst.obtener_habitante_por_nombre(nombre)
     
     if habitante:
         return jsonify({
@@ -53,6 +73,7 @@ def obtener_por_nombre(nombre):
 @app.route('/api/habitantes', methods=['POST'])
 def agregar_habitante():
     """Agregar nuevo habitante"""
+    db_inst = obtener_db()
     datos = request.get_json()
     nombre = datos.get('nombre', '').strip()
     
@@ -62,7 +83,7 @@ def agregar_habitante():
             'mensaje': 'El nombre es obligatorio'
         }), 400
     
-    habitante, mensaje = db.agregar_habitante(nombre)
+    habitante, mensaje = db_inst.agregar_habitante(nombre)
     
     if habitante:
         return jsonify({
@@ -79,6 +100,7 @@ def agregar_habitante():
 @app.route('/api/habitantes/<folio>', methods=['PATCH'])
 def actualizar_habitante(folio):
     """Actualizar estado o nota de un habitante"""
+    db_inst = obtener_db()
     datos = request.get_json() or {}
     cambios = {}
     if 'activo' in datos:
@@ -86,7 +108,7 @@ def actualizar_habitante(folio):
     if 'nota' in datos:
         cambios['nota'] = datos.get('nota')
 
-    actualizado = db.actualizar_habitante(folio, cambios)
+    actualizado = db_inst.actualizar_habitante(folio, cambios)
     if actualizado:
         return jsonify({
             'success': True,
@@ -100,7 +122,8 @@ def actualizar_habitante(folio):
 @app.route('/api/folio/siguiente', methods=['GET'])
 def obtener_siguiente_folio():
     """Obtener el siguiente folio disponible sin crear habitante"""
-    folio = db.obtener_siguiente_folio()
+    db_inst = obtener_db()
+    folio = db_inst.obtener_siguiente_folio()
     return jsonify({
         'success': True,
         'folio': folio
@@ -109,6 +132,7 @@ def obtener_siguiente_folio():
 @app.route('/api/sync/verificar', methods=['POST'])
 def verificar_y_agregar():
     """Verificar si existe un habitante, si no, agregarlo"""
+    db_inst = obtener_db()
     datos = request.get_json()
     nombre = datos.get('nombre', '').strip()
     
@@ -119,7 +143,7 @@ def verificar_y_agregar():
         }), 400
     
     # Buscar si existe
-    habitante = db.obtener_habitante_por_nombre(nombre)
+    habitante = db_inst.obtener_habitante_por_nombre(nombre)
     
     if habitante:
         return jsonify({
@@ -130,7 +154,7 @@ def verificar_y_agregar():
         })
     else:
         # Agregar nuevo
-        nuevo_habitante, mensaje = db.agregar_habitante(nombre)
+        nuevo_habitante, mensaje = db_inst.agregar_habitante(nombre)
         return jsonify({
             'success': True,
             'existe': False,
@@ -138,30 +162,21 @@ def verificar_y_agregar():
             'mensaje': 'Habitante agregado al censo'
         })
 
-@app.route('/api/ping', methods=['GET'])
+@app.route('/ping', methods=['GET'])
 def ping():
     """Verificar que la API está funcionando"""
+    db_inst = obtener_db()
+    try:
+        total = len(db_inst.obtener_todos())
+    except:
+        total = 0
+    
     return jsonify({
         'success': True,
         'mensaje': 'API Local funcionando correctamente',
-        'total_habitantes': len(db.obtener_todos())
+        'total_habitantes': total
     })
 
 if __name__ == '__main__':
-    print("\n" + "="*50)
-    print("API LOCAL INICIADA")
-    print("="*50)
-    print(f"Total habitantes en base de datos: {len(db.obtener_todos())}")
-    print("Endpoints disponibles:")
-    print("  GET    /api/habitantes")
-    print("  GET    /api/habitantes/buscar?q=criterio")
-    print("  GET    /api/habitantes/nombre/<nombre>")
-    print("  POST   /api/habitantes")
-    print("  PATCH  /api/habitantes/<folio>")
-    print("  POST   /api/sync/verificar")
-    print("  GET    /api/folio/siguiente")
-    print("  GET    /api/ping")
-    print("="*50)
-    print("Presiona Ctrl+C para detener el servidor\n")
-    
-    app.run(host='127.0.0.1', port=5000, debug=False)
+    # Ocultar que la API se está ejecutando - no mostrar output
+    app.run(host='127.0.0.1', port=5000, debug=False, use_reloader=False)

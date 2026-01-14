@@ -25,23 +25,23 @@ MODO_OFFLINE = os.getenv("MODO_OFFLINE", "False").lower() == "true"
 # ============================================================================
 # DOCUMENTACION DE ENDPOINTS DE API LOCAL
 # ============================================================================
-# Todos los endpoints estan disponibles en http://127.0.0.1:5000/api
+# Todos los endpoints estan disponibles en http://127.0.0.1:5000/
 # 
 # HABITANTES:
-#   GET    /habitantes              - Obtener todos los habitantes
-#   GET    /habitantes/buscar?q=xxx - Buscar habitantes por criterio
-#   GET    /habitantes/nombre/<nom> - Obtener habitante por nombre exacto
-#   POST   /habitantes              - Agregar nuevo habitante
-#   PATCH  /habitantes/<folio>      - Actualizar habitante
+#   GET    /api/habitantes              - Obtener todos los habitantes
+#   GET    /api/habitantes/buscar?q=xxx - Buscar habitantes por criterio
+#   GET    /api/habitantes/nombre/<nom> - Obtener habitante por nombre exacto
+#   POST   /api/habitantes              - Agregar nuevo habitante
+#   PATCH  /api/habitantes/<folio>      - Actualizar habitante
 #
 # FOLIOS:
-#   GET    /folio/siguiente         - Obtener siguiente folio disponible
+#   GET    /api/folio/siguiente         - Obtener siguiente folio disponible
 #
 # SINCRONIZACION:
-#   POST   /sync/verificar          - Verificar/crear habitante si no existe
+#   POST   /api/sync/verificar          - Verificar/crear habitante si no existe
 #
 # SALUD:
-#   GET    /ping                    - Verificar que API esta funcionando
+#   GET    /ping                        - Verificar que API esta funcionando
 #
 # NOTAS:
 #   - Todos los metodos retornan JSON

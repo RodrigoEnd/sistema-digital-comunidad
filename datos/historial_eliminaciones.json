@@ -1,0 +1,105 @@
+{
+  "version": "1.0",
+  "fecha_actualización": "2026-01-14T10:42:49.339265",
+  "total_eliminaciones": 4,
+  "eliminaciones": [
+    {
+      "fecha_eliminación": "2026-01-14T10:33:20.292950",
+      "usuario_que_eliminó": "TestUser",
+      "motivo": "Prueba unitaria",
+      "datos_persona": {
+        "folio": "TEST-001",
+        "nombre": "Juan Prueba",
+        "monto_esperado": 100,
+        "pagos": [
+          {
+            "monto": 30,
+            "fecha": "01/01/2026",
+            "hora": "10:00:00"
+          },
+          {
+            "monto": 20,
+            "fecha": "02/01/2026",
+            "hora": "11:00:00"
+          }
+        ]
+      },
+      "información_audit": {
+        "folio": "TEST-001",
+        "nombre": "Juan Prueba",
+        "total_pagado": 50,
+        "total_esperado": 100,
+        "número_pagos": 2,
+        "cooperación": "Desconocida"
+      }
+    },
+    {
+      "fecha_eliminación": "2026-01-14T10:33:20.294943",
+      "usuario_que_eliminó": "TestUser",
+      "motivo": "Prueba",
+      "datos_persona": {
+        "folio": "TEST-REC-001",
+        "nombre": "María Recuperable",
+        "monto_esperado": 200,
+        "pagos": []
+      },
+      "información_audit": {
+        "folio": "TEST-REC-001",
+        "nombre": "María Recuperable",
+        "total_pagado": 0,
+        "total_esperado": 200,
+        "número_pagos": 0,
+        "cooperación": "Desconocida"
+      }
+    },
+    {
+      "fecha_eliminación": "2026-01-14T10:42:49.337368",
+      "usuario_que_eliminó": "TestUser",
+      "motivo": "Prueba unitaria",
+      "datos_persona": {
+        "folio": "TEST-001",
+        "nombre": "Juan Prueba",
+        "monto_esperado": 100,
+        "pagos": [
+          {
+            "monto": 30,
+            "fecha": "01/01/2026",
+            "hora": "10:00:00"
+          },
+          {
+            "monto": 20,
+            "fecha": "02/01/2026",
+            "hora": "11:00:00"
+          }
+        ]
+      },
+      "información_audit": {
+        "folio": "TEST-001",
+        "nombre": "Juan Prueba",
+        "total_pagado": 50,
+        "total_esperado": 100,
+        "número_pagos": 2,
+        "cooperación": "Desconocida"
+      }
+    },
+    {
+      "fecha_eliminación": "2026-01-14T10:42:49.339087",
+      "usuario_que_eliminó": "TestUser",
+      "motivo": "Prueba",
+      "datos_persona": {
+        "folio": "TEST-REC-001",
+        "nombre": "María Recuperable",
+        "monto_esperado": 200,
+        "pagos": []
+      },
+      "información_audit": {
+        "folio": "TEST-REC-001",
+        "nombre": "María Recuperable",
+        "total_pagado": 0,
+        "total_esperado": 200,
+        "número_pagos": 0,
+        "cooperación": "Desconocida"
+      }
+    }
+  ]
+}

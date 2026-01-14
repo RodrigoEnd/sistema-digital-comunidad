@@ -70,6 +70,45 @@ class Cache:
             self._cache.pop(clave, None)
             self._ttl.pop(clave, None)
     
+    def invalidar(self, clave):
+        """
+        Invalidar una clave específica del cache (alias de eliminar)
+        
+        Args:
+            clave (str): Clave a invalidar
+            
+        Returns:
+            bool: True si se invalidó, False si no existía
+        """
+        with self._lock:
+            if clave in self._cache:
+                del self._cache[clave]
+                self._ttl.pop(clave, None)
+                return True
+            return False
+    
+    def invalidar_patron(self, patron):
+        """
+        Invalidar claves que coincidan con un patrón regex
+        
+        Args:
+            patron (str): Patrón regex para buscar claves
+            
+        Returns:
+            int: Cantidad de claves invalidadas
+        """
+        import re
+        with self._lock:
+            pattern = re.compile(patron)
+            claves_eliminar = [k for k in self._cache.keys() 
+                             if pattern.match(k)]
+            
+            for clave in claves_eliminar:
+                del self._cache[clave]
+                self._ttl.pop(clave, None)
+            
+            return len(claves_eliminar)
+    
     def limpiar(self):
         """Limpiar todo el cache"""
         with self._lock:

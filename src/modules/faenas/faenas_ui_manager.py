@@ -1,8 +1,3 @@
-"""
-Gestor de interfaz de usuario para el sistema de faenas
-Maneja la creación y actualización de componentes UI
-"""
-
 import tkinter as tk
 from tkinter import ttk
 from datetime import datetime
@@ -16,6 +11,8 @@ from src.config import (
     HORA_FIN_DEFECTO, HORA_FIN_AMPM_DEFECTO,
     PESO_FAENA_DEFECTO
 )
+from src.modules.faenas.dashboard_faenas import DashboardFaenas
+from src.modules.faenas.buscador_avanzado import BuscadorAvanzadoFaenas
 
 
 class FaenasUIManager:
@@ -91,10 +88,17 @@ class FaenasUIManager:
 
         main.columnconfigure(0, weight=1)
         main.columnconfigure(1, weight=1)
-        main.rowconfigure(1, weight=1)
+        main.rowconfigure(0, weight=0)
+        main.rowconfigure(1, weight=0)
         main.rowconfigure(2, weight=1)
+        main.rowconfigure(3, weight=1)
 
-        # Paneles
+        dashboard = DashboardFaenas(main, self.callbacks.get('obtener_datos_dashboard', lambda: {}))
+        dashboard.frame.grid(row=0, column=0, columnspan=2, sticky='nsew', pady=(0, ESPACIADO['lg']))
+        
+        buscador = BuscadorAvanzadoFaenas(main, self.callbacks.get('busqueda_avanzada', lambda x: None))
+        buscador.frame.grid(row=1, column=0, columnspan=2, sticky='nsew', pady=(0, ESPACIADO['lg']))
+        
         self._crear_panel_formulario(main)
         self._crear_panel_listado(main)
         self._crear_panel_detalle(main)
@@ -198,39 +202,52 @@ class FaenasUIManager:
                      command=self.callbacks.get('refrescar_habitantes')).pack(fill=tk.X)
 
     def _crear_panel_listado(self, parent) -> None:
-        """Crear panel de listado de faenas"""
         panel = PanelModerno(parent, titulo="Faenas registradas", tema=self.tema)
-        panel.grid(row=1, column=0, sticky='nsew', padx=(0, ESPACIADO['lg']))
-        panel.content_frame.rowconfigure(0, weight=1)
+        panel.grid(row=2, column=0, sticky='nsew', padx=(0, ESPACIADO['lg']))
+        panel.content_frame.rowconfigure(1, weight=1)
         panel.content_frame.columnconfigure(0, weight=1)
 
-        columns = ('fecha', 'nombre', 'peso', 'participantes')
+        filtro_frame = tk.Frame(panel.content_frame, bg=self.tema['bg_secundario'])
+        filtro_frame.grid(row=0, column=0, sticky='we', pady=(0, ESPACIADO['sm']))
+
+        tk.Label(filtro_frame, text="Estado:", font=FUENTES['normal'],
+                bg=self.tema['bg_secundario'], fg=self.tema['fg_principal']).pack(side=tk.LEFT, padx=5)
+        ttk.Combobox(filtro_frame, values=['Todas', 'Completadas', 'Pagadas', 'Pendientes'],
+                    width=15, state='readonly').pack(side=tk.LEFT, padx=5)
+
+        columns = ('fecha', 'nombre', 'peso', 'participantes', 'estado')
         self.tree_faenas = ttk.Treeview(panel.content_frame, columns=columns,
                                         show='headings', height=14)
         self.tree_faenas.heading('fecha', text='Fecha')
         self.tree_faenas.heading('nombre', text='Faena')
         self.tree_faenas.heading('peso', text='Peso')
         self.tree_faenas.heading('participantes', text='Participantes')
+        self.tree_faenas.heading('estado', text='Estado')
 
-        self.tree_faenas.column('fecha', width=120, anchor='center')
-        self.tree_faenas.column('nombre', width=260)
-        self.tree_faenas.column('peso', width=70, anchor='center')
-        self.tree_faenas.column('participantes', width=110, anchor='center')
+        self.tree_faenas.column('fecha', width=100, anchor='center')
+        self.tree_faenas.column('nombre', width=220)
+        self.tree_faenas.column('peso', width=60, anchor='center')
+        self.tree_faenas.column('participantes', width=100, anchor='center')
+        self.tree_faenas.column('estado', width=80, anchor='center')
+
+        self.tree_faenas.tag_configure('completada', background='#d4edda')
+        self.tree_faenas.tag_configure('pagada', background='#cce5ff')
+        self.tree_faenas.tag_configure('pendiente', background='#fff3cd')
 
         scroll_y = ttk.Scrollbar(panel.content_frame, orient=tk.VERTICAL,
                                  command=self.tree_faenas.yview)
         self.tree_faenas.configure(yscrollcommand=scroll_y.set)
 
-        self.tree_faenas.grid(row=0, column=0, sticky='nsew')
-        scroll_y.grid(row=0, column=1, sticky='ns')
+        self.tree_faenas.grid(row=1, column=0, sticky='nsew')
+        scroll_y.grid(row=1, column=1, sticky='ns')
 
         self.tree_faenas.bind('<<TreeviewSelect>>',
                               self.callbacks.get('on_select_faena'))
+        self.tree_faenas.bind('<Button-3>', self._mostrar_menu_contexto)
 
     def _crear_panel_detalle(self, parent) -> None:
-        """Crear panel de detalle de participantes"""
         panel = PanelModerno(parent, titulo="Participantes de la faena", tema=self.tema)
-        panel.grid(row=1, column=1, sticky='nsew')
+        panel.grid(row=2, column=1, sticky='nsew')
         panel.content_frame.rowconfigure(2, weight=1)
         panel.content_frame.columnconfigure(0, weight=1)
 
@@ -305,24 +322,14 @@ class FaenasUIManager:
         scroll_y.grid(row=2, column=1, sticky='ns')
 
     def _crear_panel_resumen(self, parent) -> None:
-        """Crear panel de resumen anual"""
-        self.panel_resumen = PanelModerno(parent, titulo="▼ 📊 Resumen anual de puntos",
+        self.panel_resumen = PanelModerno(parent, titulo="Resumen anual de puntos",
                                          tema=self.tema)
-        self.panel_resumen.grid(row=2, column=0, columnspan=2, sticky='nsew',
+        self.panel_resumen.grid(row=3, column=0, columnspan=2, sticky='nsew',
                                pady=(ESPACIADO['lg'], 0))
         self.panel_resumen.content_frame.columnconfigure(0, weight=1)
         self.panel_resumen.content_frame.rowconfigure(1, weight=1)
 
-        # Hacer título clickeable
-        self.panel_resumen.titulo_label.bind('<Button-1>',
-                                             lambda e: self.callbacks.get('toggle_resumen')(
-                                                 self.panel_resumen))
-        self.panel_resumen.titulo_label.config(cursor='hand2')
-
-        # Filtros
         self._crear_filtros_resumen()
-
-        # TreeView resumen
         self._crear_tree_resumen()
 
     def _crear_filtros_resumen(self) -> None:
@@ -386,3 +393,11 @@ class FaenasUIManager:
             'hora_inicio': f"{self.hora_inicio_var.get()} {self.hora_inicio_ampm_var.get()}" if self.hora_inicio_var.get() else '',
             'hora_fin': f"{self.hora_fin_var.get()} {self.hora_fin_ampm_var.get()}" if self.hora_fin_var.get() else ''
         }
+
+    def _mostrar_menu_contexto(self, event):
+        menu = tk.Menu(self.root, tearoff=0)
+        menu.add_command(label='Ver detalles', command=self.callbacks.get('ver_detalles'))
+        menu.add_command(label='Editar', command=self.callbacks.get('editar_faena'))
+        menu.add_separator()
+        menu.add_command(label='Eliminar', command=self.callbacks.get('eliminar_faena'))
+        menu.post(event.x_root, event.y_root)

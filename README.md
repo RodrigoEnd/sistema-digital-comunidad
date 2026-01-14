@@ -9,13 +9,13 @@ Sistema integral para la gestión comunitaria incluyendo censo de habitantes, co
 - **Registro de Faenas** - Seguimiento de trabajo comunitario
 
 ## Características
-- ✅ Autenticación con usuario y contraseña
-- ✅ Cifrado AES-256 de datos sensibles
-- ✅ Auditoría completa de todas las operaciones
-- ✅ Historial de cambios con usuario y timestamp
-- ✅ Guardado automático en tiempo real
-- ✅ Interfaz moderna y responsiva
-- ✅ Backups automáticos
+-  Autenticación con usuario y contraseña
+-  Cifrado AES-256 de datos sensibles
+-  Auditoría completa de todas las operaciones
+-  Historial de cambios con usuario y timestamp
+-  Guardado automático en tiempo real
+-  Interfaz moderna y responsiva
+-  Backups automáticos
 
 ## Instalación Rápida
 

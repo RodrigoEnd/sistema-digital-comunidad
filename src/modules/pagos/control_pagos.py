@@ -51,7 +51,13 @@ class SistemaControlPagos:
     def __init__(self, root):
         self.root = root
         self.root.title("Sistema de Control de Pagos - Proyectos Comunitarios")
-        self.root.state('zoomed')  # Pantalla completa en Windows
+        # No usar 'zoomed' - cambiado a tamaño fijo
+        self.root.geometry("1400x800")
+        # Centrar ventana
+        self.root.update_idletasks()
+        x = (self.root.winfo_screenwidth() // 2) - (1400 // 2)
+        y = (self.root.winfo_screenheight() // 2) - (800 // 2)
+        self.root.geometry(f"1400x800+{x}+{y}")
 
         # Configuración visual proveniente de config.py y tema moderno
         self.TEMAS = TEMAS
@@ -87,6 +93,9 @@ class SistemaControlPagos:
         # BUGFIX TCL: Inicializar afterID para evitar comandos inválidos
         self._after_id_barra = None
         
+        # Flag para inicialización asíncrona
+        self._inicializacion_completada = False
+        
         # Cargar datos del archivo PRIMERO
         self.cargar_datos()
         
@@ -120,16 +129,6 @@ class SistemaControlPagos:
         # Configurar estilos iniciales
         self.configurar_estilos()
         
-        # Verificar/iniciar API local
-        if not self.asegurar_api_activa():
-            messagebox.showerror("Error", "No se pudo iniciar ni conectar con la API local")
-            return
-        self.iniciar_watchdog_api()
-        
-        # Verificar/establecer contraseña primera vez
-        if not self.verificar_password_inicial():
-            return
-        
         self.nombre_visible = tk.BooleanVar(value=True)
         self.folio_visible = tk.BooleanVar(value=True)
         self.cifras_visibles = True  # Para ocultar/mostrar cifras sensibles
@@ -147,7 +146,6 @@ class SistemaControlPagos:
         self.habilitar_ordenamiento_var = tk.BooleanVar(value=False)  # BUGFIX: Control de ordenamiento
         
         # BUGFIX: Inicializar API en background para no ralentizar apertura UI
-        # NO bloqueamos con messagebox aquí, se hace en background
         self.api_activa = True  # Asumir que funciona por defecto
         threading.Thread(target=self._inicializar_api_background, daemon=True).start()
         
@@ -2017,10 +2015,10 @@ class SistemaControlPagos:
             # Si hay advertencias importantes, registrar pero no mostrar popup (para no bloquear UI)
             if informe['recomendaciones']:
                 for recomendación in informe['recomendaciones'][:3]:  # Log solo primeras 3
-                    registrar_error('AUDITORÍA_COOPERACIONES', recomendación)
+                    registrar_error('control_pagos', '_auditar_coherencia_inicial', recomendación)
         
         except Exception as e:
-            registrar_error('_auditar_coherencia_inicial', str(e))
+            registrar_error('control_pagos', '_auditar_coherencia_inicial', str(e))
     
     def cerrar_aplicacion(self):
         """Cerrar aplicación con backup automático silencioso"""

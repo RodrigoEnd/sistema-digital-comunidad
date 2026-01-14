@@ -1,6 +1,6 @@
 """
 Sistema de autenticacion y manejo de usuarios
-Gestiona login, sesiones y control de acceso
+Gestiona login, sesiones y control de acceso - Usa SQLite
 """
 
 import json
@@ -9,9 +9,10 @@ from datetime import datetime, timedelta
 import bcrypt
 from src.config import RUTA_SEGURA
 from src.core.logger import registrar_acceso, registrar_operacion, registrar_error
+from src.core.base_datos_sqlite import obtener_bd
 
 class GestorAutenticacion:
-    """Gestor de autenticacion de usuarios"""
+    """Gestor de autenticacion de usuarios con SQLite"""
     
     # Roles disponibles del sistema
     ROLES = {
@@ -22,40 +23,26 @@ class GestorAutenticacion:
     }
     
     def __init__(self):
-        self.archivo_usuarios = os.path.join(RUTA_SEGURA, 'usuarios.json')
+        self.bd = obtener_bd()
         self.archivo_sesiones = os.path.join(RUTA_SEGURA, 'sesiones.json')
-        self.usuarios = self._cargar_usuarios()
         self.sesiones = self._cargar_sesiones()
-        
-        # Crear usuario admin por defecto si no existen usuarios
-        if not self.usuarios:
-            self._crear_usuario_predeterminado()
     
     def _cargar_usuarios(self):
-        """Carga usuarios desde archivo"""
-        try:
-            if os.path.exists(self.archivo_usuarios):
-                with open(self.archivo_usuarios, 'r', encoding='utf-8') as f:
-                    return json.load(f)
-        except Exception as e:
-            registrar_error('autenticacion', 'cargar_usuarios', str(e))
-        return {}
+        """Carga usuarios de SQLite"""
+        return self.bd.obtener_usuarios()
+    
+    @property
+    def usuarios(self):
+        """Propiedad para obtener usuarios actuales"""
+        return self._cargar_usuarios()
+    
+    def _cargar_usuarios(self):
+        """Carga usuarios de SQLite"""
+        return self.bd.obtener_usuarios()
     
     def _guardar_usuarios(self):
-        """Guarda usuarios en archivo"""
-        try:
-            with open(self.archivo_usuarios, 'w', encoding='utf-8') as f:
-                json.dump(self.usuarios, f, indent=2, ensure_ascii=False)
-            
-            # Ocultar archivo
-            try:
-                import ctypes
-                FILE_ATTRIBUTE_HIDDEN = 0x02
-                ctypes.windll.kernel32.SetFileAttributesW(self.archivo_usuarios, FILE_ATTRIBUTE_HIDDEN)
-            except:
-                pass
-        except Exception as e:
-            registrar_error('autenticacion', 'guardar_usuarios', str(e))
+        """En SQLite los usuarios se guardan automáticamente"""
+        pass
     
     def _cargar_sesiones(self):
         """Carga sesiones desde archivo"""
@@ -102,43 +89,12 @@ class GestorAutenticacion:
     
     def _crear_usuario_predeterminado(self):
         """Crea usuario admin predeterminado en primera instalación"""
-        usuario = 'admin'
-        contraseña = 'admin1234'
-        
-        hash_contraseña = bcrypt.hashpw(contraseña.encode(), bcrypt.gensalt(rounds=12))
-        
-        self.usuarios[usuario] = {
-            'nombre_completo': 'Administrador del Sistema',
-            'contraseña_hash': hash_contraseña.decode(),
-            'rol': 'admin',
-            'email': 'admin@sistemacomunidad.local',
-            'activo': True,
-            'fecha_creacion': datetime.now().strftime('%d/%m/%Y %H:%M:%S'),
-            'ultimo_acceso': None
-        }
-        
-        self._guardar_usuarios()
-        registrar_operacion('CREACION_USUARIO', 'Usuario admin creado automáticamente', {'usuario': usuario})
+        pass  # SQLite ya lo crea automáticamente
     
-    def crear_usuario(self, usuario, contraseña, nombre_completo, rol='operador', email=''):
-        """
-        Crea un nuevo usuario
-        
-        Args:
-            usuario (str): Nombre de usuario unico
-            contraseña (str): Contraseña en texto plano
-            nombre_completo (str): Nombre completo del usuario
-            rol (str): Rol del usuario (admin, operador, lectura, reportes)
-            email (str): Email del usuario
-            
-        Returns:
-            dict: Resultado de la creacion
-        """
+    def crear_usuario(self, usuario, contraseña, nombre_completo="", rol='operador', email=''):
+        """Crea un nuevo usuario en SQLite"""
         try:
             # Validaciones
-            if usuario in self.usuarios:
-                return {'exito': False, 'error': 'El usuario ya existe'}
-            
             if len(usuario) < 3:
                 return {'exito': False, 'error': 'El usuario debe tener al menos 3 caracteres'}
             
@@ -146,55 +102,39 @@ class GestorAutenticacion:
                 return {'exito': False, 'error': 'La contraseña debe tener al menos 6 caracteres'}
             
             if rol not in self.ROLES:
-                return {'exito': False, 'error': f'Rol invalido: {rol}'}
+                return {'exito': False, 'error': f'Rol inválido: {rol}'}
             
-            # Crear usuario
-            hash_contraseña = bcrypt.hashpw(contraseña.encode(), bcrypt.gensalt(rounds=12))
+            # Crear usuario en SQLite
+            exito, mensaje = self.bd.crear_usuario(usuario, contraseña, email, rol)
             
-            self.usuarios[usuario] = {
-                'nombre_completo': nombre_completo,
-                'contraseña_hash': hash_contraseña.decode(),
-                'rol': rol,
-                'email': email,
-                'activo': True,
-                'fecha_creacion': datetime.now().strftime('%d/%m/%Y %H:%M:%S'),
-                'ultimo_acceso': None
-            }
-            
-            self._guardar_usuarios()
-            registrar_operacion('CREAR_USUARIO', f'Usuario {usuario} creado', {'usuario': usuario, 'rol': rol})
-            
-            return {'exito': True, 'mensaje': f'Usuario {usuario} creado correctamente'}
+            if exito:
+                registrar_operacion('CREAR_USUARIO', f'Usuario {usuario} creado', {'usuario': usuario, 'rol': rol})
+                return {'exito': True, 'mensaje': f'Usuario {usuario} creado correctamente'}
+            else:
+                return {'exito': False, 'error': mensaje}
             
         except Exception as e:
-            registrar_error('autenticacion', 'crear_usuario', str(e), f'usuario: {usuario}')
+            registrar_error('autenticacion', 'crear_usuario', str(e))
             return {'exito': False, 'error': str(e)}
     
     def login(self, usuario, contraseña):
-        """
-        Intenta hacer login con usuario y contraseña
-        
-        Args:
-            usuario (str): Nombre de usuario
-            contraseña (str): Contraseña
-            
-        Returns:
-            dict: Token de sesion o error
-        """
+        """Intenta hacer login contra SQLite"""
         try:
-            if usuario not in self.usuarios:
+            usuario_datos = self.bd.obtener_usuario(usuario)
+            
+            if not usuario_datos:
                 registrar_acceso(usuario, 'FALLIDO - Usuario no existe')
                 return {'exito': False, 'error': 'Usuario o contraseña incorrectos'}
             
-            user_data = self.usuarios[usuario]
-            
-            if not user_data.get('activo'):
+            if not usuario_datos.get('activo'):
                 registrar_acceso(usuario, 'FALLIDO - Usuario inactivo')
                 return {'exito': False, 'error': 'Usuario inactivo'}
             
-            # Verificar contraseña
-            hash_almacenado = user_data['contraseña_hash'].encode()
-            if not bcrypt.checkpw(contraseña.encode(), hash_almacenado):
+            # Verificar contraseña (usando SHA256)
+            import hashlib
+            hash_ingresado = hashlib.sha256(contraseña.encode()).hexdigest()
+            
+            if hash_ingresado != usuario_datos['contraseña']:
                 registrar_acceso(usuario, 'FALLIDO - Contraseña incorrecta')
                 return {'exito': False, 'error': 'Usuario o contraseña incorrectos'}
             
@@ -204,15 +144,11 @@ class GestorAutenticacion:
             
             self.sesiones[token] = {
                 'usuario': usuario,
-                'rol': user_data['rol'],
+                'rol': usuario_datos['rol'],
                 'inicio': datetime.now().isoformat(),
                 'expiracion': expiracion
             }
             
-            # Actualizar ultimo acceso
-            self.usuarios[usuario]['ultimo_acceso'] = datetime.now().strftime('%d/%m/%Y %H:%M:%S')
-            
-            self._guardar_usuarios()
             self._guardar_sesiones()
             
             registrar_acceso(usuario, 'EXITOSO')
@@ -221,12 +157,11 @@ class GestorAutenticacion:
                 'exito': True,
                 'token': token,
                 'usuario': usuario,
-                'rol': user_data['rol'],
-                'nombre_completo': user_data['nombre_completo']
+                'rol': usuario_datos['rol']
             }
             
         except Exception as e:
-            registrar_error('autenticacion', 'login', str(e), f'usuario: {usuario}')
+            registrar_error('autenticacion', 'login', str(e))
             return {'exito': False, 'error': str(e)}
     
     def verificar_sesion(self, token):

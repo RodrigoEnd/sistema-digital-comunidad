@@ -1,6 +1,6 @@
 """
 Módulo de gestión de cooperaciones
-Responsable de: crear, editar, eliminar y gestionar cooperaciones
+MIGRADO A SQLite - Usa base de datos en lugar de archivos JSON
 """
 
 import time
@@ -11,19 +11,21 @@ import tkinter as tk
 
 from src.core.logger import registrar_operacion, registrar_error
 from src.modules.pagos.pagos_constantes import PATRONES, MENSAJES
+from src.core.base_datos_sqlite import obtener_bd
 
 
 class GestorCooperaciones:
-    """Gestor centralizado de cooperaciones"""
+    """Gestor centralizado de cooperaciones - Backend SQLite"""
     
-    def __init__(self, archivo_datos, gestor_seguridad):
+    def __init__(self, archivo_datos=None, gestor_seguridad=None):
+        self.bd = obtener_bd()
         self.cooperaciones = []
         self.coop_activa_id = None
-        self.archivo_datos = archivo_datos
-        self.gestor_seguridad = gestor_seguridad
+        self.archivo_datos = archivo_datos  # Para compatibilidad
+        self.gestor_seguridad = gestor_seguridad  # Para compatibilidad
     
     def cargar_cooperaciones(self, datos):
-        """Cargar cooperaciones desde datos guardados"""
+        """Cargar cooperaciones desde datos guardados o SQLite"""
         self.cooperaciones = datos.get('cooperaciones', [])
         self.coop_activa_id = datos.get('cooperacion_activa')
         

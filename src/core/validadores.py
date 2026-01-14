@@ -107,13 +107,13 @@ def validar_monto(monto):
 
 def validar_folio(folio):
     """
-    Valida un folio de habitante
+    Valida un folio de habitante con formato flexible
     
     Args:
-        folio (str): Folio a validar
+        folio (str): Folio a validar (FOL-XXXX o HAB-XXXX)
         
     Returns:
-        str: Folio validado
+        str: Folio validado en formato FOL-XXXX
         
     Raises:
         ErrorValidacion: Si el folio no es valido
@@ -126,9 +126,14 @@ def validar_folio(folio):
     if not folio:
         raise ErrorValidacion("El folio no puede estar vacio")
     
-    # El folio debe tener formato HAB-XXXX
-    if not folio.startswith('HAB-') or len(folio) != 8:
-        raise ErrorValidacion("El folio debe tener formato HAB-XXXX")
+    # Aceptar tanto FOL- como HAB- como prefijo válido
+    import re
+    if not re.match(r'^(FOL|HAB)-\d{4}$', folio):
+        raise ErrorValidacion("El folio debe tener formato FOL-XXXX o HAB-XXXX")
+    
+    # Normalizar a FOL- si viene con HAB-
+    if folio.startswith('HAB-'):
+        folio = 'FOL-' + folio[4:]
     
     return folio
 
@@ -416,13 +421,13 @@ def validar_estado_pago(estado):
 
 def validar_fecha_formato(fecha):
     """
-    Valida que una fecha este en formato DD/MM/YYYY
+    Valida que una fecha esté en formato válido - acepta ambos formatos
     
     Args:
-        fecha (str): Fecha a validar
+        fecha (str): Fecha a validar (YYYY-MM-DD o DD/MM/YYYY)
         
     Returns:
-        str: Fecha validada
+        str: Fecha validada en formato YYYY-MM-DD
         
     Raises:
         ErrorValidacion: Si la fecha no es valida
@@ -432,12 +437,23 @@ def validar_fecha_formato(fecha):
     
     fecha = fecha.strip()
     
+    # Intentar formato YYYY-MM-DD (formato interno del sistema)
+    try:
+        datetime.strptime(fecha, '%Y-%m-%d')
+        return fecha  # Ya está en formato correcto
+    except ValueError:
+        pass
+    
+    # Intentar formato DD/MM/YYYY (formato usuario)
     try:
         datetime.strptime(fecha, '%d/%m/%Y')
+        # Convertir a formato interno
+        partes = fecha.split('/')
+        return f"{partes[2]}-{partes[1]}-{partes[0]}"
     except ValueError:
-        raise ErrorValidacion("La fecha debe estar en formato DD/MM/YYYY")
+        pass
     
-    return fecha
+    raise ErrorValidacion("La fecha debe estar en formato YYYY-MM-DD o DD/MM/YYYY")
 
 
 def validar_fecha_no_futura(fecha):

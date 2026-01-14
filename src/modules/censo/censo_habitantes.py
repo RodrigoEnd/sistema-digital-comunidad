@@ -11,6 +11,7 @@ import sys
 import time
 import os
 from datetime import datetime
+import threading
 
 # Configurar path para imports cuando se ejecuta directamente
 proyecto_raiz = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
@@ -36,9 +37,17 @@ class SistemaCensoHabitantes:
     def __init__(self, root):
         self.root = root
         self.root.title("📋 Sistema de Censo de Habitantes - Comunidad San Pablo")
-        self.root.state('zoomed')
         
+        # No usar 'zoomed' - puede causar problemas de visibilidad
+        # Usar tamaño estándar en su lugar
         self.root.geometry("1400x800")
+        
+        # Centrar ventana en pantalla
+        self.root.update_idletasks()
+        x = (self.root.winfo_screenwidth() // 2) - (1400 // 2)
+        y = (self.root.winfo_screenheight() // 2) - (800 // 2)
+        self.root.geometry(f"1400x800+{x}+{y}")
+        
         self.style = ttk.Style()
         
         self.api_url = API_URL
@@ -63,17 +72,15 @@ class SistemaCensoHabitantes:
         # Tooltip para indicadores
         self.tooltip_label = None
         
+        # Flag para controlar inicialización
+        self._api_verificada = False
+        self._inicializacion_completa = False
+        
         self.configurar_estilos()
-        
-        if not self.asegurar_api_activa():
-            messagebox.showerror("Error", "No se pudo iniciar ni conectar con la API local")
-            return
-        
         self.configurar_interfaz()
-        self.cargar_habitantes()
         
-        # Cargar preferencias después de configurar interfaz
-        self._cargar_y_aplicar_preferencias()
+        # Iniciar carga de API y datos de forma asíncrona
+        self._inicializar_async()
 
     def obtener_colores(self):
         return TEMA_GLOBAL
@@ -90,11 +97,42 @@ class SistemaCensoHabitantes:
         self.style.map('Treeview', background=[('selected', colores['table_selected'])], foreground=[('selected', colores['fg_principal'])])
         self.style.configure('Treeview.Heading', background=colores['table_header'], foreground=colores['table_header_text'], padding=6)
 
-    def asegurar_api_activa(self):
-        """Comprueba la API y la levanta si no está activa"""
-        if self.verificar_api():
-            return True
-        
+    def _inicializar_async(self):
+        """Inicializa API y carga datos de forma asíncrona sin bloquear UI"""
+        # Iniciar API en hilo separado
+        hilo = threading.Thread(target=self._hilo_inicializacion, daemon=True)
+        hilo.start()
+    
+    def _hilo_inicializacion(self):
+        """Hilo para inicializar API y cargar datos sin bloquear UI"""
+        try:
+            # Verificar o iniciar API
+            if not self.verificar_api():
+                self._iniciar_api()
+                # Esperar a que API esté lista (pero en hilo separado)
+                for i in range(40):  # máx 10 segundos
+                    time.sleep(0.25)
+                    if self.verificar_api():
+                        print("API iniciada correctamente")
+                        break
+            
+            self._api_verificada = True
+            
+            # Cargar datos
+            self.cargar_habitantes()
+            
+            # Cargar preferencias
+            self._cargar_y_aplicar_preferencias()
+            
+            self._inicializacion_completa = True
+            
+        except Exception as e:
+            print(f"Error en inicialización: {e}")
+            self.root.after(0, lambda: messagebox.showerror("Error", 
+                f"Error durante inicialización: {str(e)}"))
+    
+    def _iniciar_api(self):
+        """Iniciar servidor API en segundo plano (sin bloqueo)"""
         try:
             script_dir = os.path.dirname(os.path.abspath(__file__))
             proyecto_raiz = os.path.abspath(os.path.join(script_dir, "..", "..", ".."))
@@ -102,7 +140,7 @@ class SistemaCensoHabitantes:
             
             if not os.path.exists(api_path):
                 print(f"Error: No se encuentra API en {api_path}")
-                return False
+                return
             
             subprocess.Popen([sys.executable, api_path], 
                            stdout=subprocess.DEVNULL, 
@@ -110,16 +148,8 @@ class SistemaCensoHabitantes:
                            creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0)
             
             print("Iniciando API local...")
-            for i in range(20):
-                time.sleep(0.5)
-                if self.verificar_api():
-                    print("API iniciada correctamente")
-                    return True
-            print("ADVERTENCIA: API tardó en iniciar")
-            return True
         except Exception as e:
             print(f"Error iniciando API: {e}")
-            return False
     
     def verificar_api(self):
         """Verificar que la API está funcionando"""
@@ -350,47 +380,63 @@ class SistemaCensoHabitantes:
             if response.status_code == 200:
                 data = response.json()
                 self.habitantes = data['habitantes']
-                self._actualizar_tabla(self.habitantes)
+                # Actualizar UI de forma segura desde threads
+                self.root.after(0, self._actualizar_tabla, self.habitantes)
             else:
-                messagebox.showerror("Error", "No se pudieron cargar los habitantes")
+                self.root.after(0, lambda: messagebox.showerror("Error", "No se pudieron cargar los habitantes"))
         except Exception as e:
-            messagebox.showerror("Error", f"Error de conexion: {str(e)}")
+            print(f"Error cargando habitantes: {e}")
+            self.root.after(0, lambda: messagebox.showerror("Error", f"Error de conexión: {str(e)}"))
     
     def _actualizar_tabla(self, habitantes):
         """Actualizar tabla con lista de habitantes"""
-        for item in self.tree.get_children():
-            self.tree.delete(item)
-        
-        for hab in habitantes:
-            activo = hab.get('activo', True)
-            estado_icono = "● Activo" if activo else "● Inactivo"
-            tag = 'activo' if activo else 'inactivo'
-            nota = hab.get('nota', '')
+        try:
+            # Protección: verificar que self.tree existe
+            if not hasattr(self, 'tree'):
+                print("Tabla aún no ha sido creada")
+                return
             
-            self.tree.insert('', tk.END,
-                           values=(hab['folio'],
-                                  hab['nombre'],
-                                  hab.get('fecha_registro', ''),
-                                  estado_icono,
-                                  nota[:CENSO_NOTA_MAX_DISPLAY] + '...' if len(nota) > CENSO_NOTA_MAX_DISPLAY else nota),
-                           tags=(tag,))
-        
-        self.total_label.config(text=f"Total Habitantes: {len(habitantes)}")
-        self._actualizar_indicadores_estado()
-        self._actualizar_barra_estado()
+            for item in self.tree.get_children():
+                self.tree.delete(item)
+            
+            for hab in habitantes:
+                activo = hab.get('activo', True)
+                estado_icono = "● Activo" if activo else "● Inactivo"
+                tag = 'activo' if activo else 'inactivo'
+                nota = hab.get('nota', '')
+                
+                self.tree.insert('', tk.END,
+                               values=(hab['folio'],
+                                      hab['nombre'],
+                                      hab.get('fecha_registro', ''),
+                                      estado_icono,
+                                      nota[:CENSO_NOTA_MAX_DISPLAY] + '...' if len(nota) > CENSO_NOTA_MAX_DISPLAY else nota),
+                               tags=(tag,))
+            
+            if hasattr(self, 'total_label'):
+                self.total_label.config(text=f"Total Habitantes: {len(habitantes)}")
+            self._actualizar_indicadores_estado()
+            self._actualizar_barra_estado()
+        except Exception as e:
+            print(f"Error actualizando tabla: {e}")
     
     def _actualizar_barra_estado(self):
         """Actualiza la barra de estado inferior"""
-        activos = sum(1 for hab in self.habitantes if hab.get('activo', True))
-        inactivos = len(self.habitantes) - activos
-        con_notas = sum(1 for hab in self.habitantes if hab.get('nota', ''))
-        
-        ultima_actualizacion = datetime.now().strftime("%H:%M:%S")
-        
-        texto_estado = f"📊 Total: {len(self.habitantes)} | ✓ Activos: {activos} | ✗ Inactivos: {inactivos} | 📝 Con notas: {con_notas} | Última actualización: {ultima_actualizacion}"
-        
-        if hasattr(self, 'status_label'):
+        try:
+            if not hasattr(self, 'status_label'):
+                return
+            
+            activos = sum(1 for hab in self.habitantes if hab.get('activo', True))
+            inactivos = len(self.habitantes) - activos
+            con_notas = sum(1 for hab in self.habitantes if hab.get('nota', ''))
+            
+            ultima_actualizacion = datetime.now().strftime("%H:%M:%S")
+            
+            texto_estado = f"📊 Total: {len(self.habitantes)} | ✓ Activos: {activos} | ✗ Inactivos: {inactivos} | 📝 Con notas: {con_notas} | Última actualización: {ultima_actualizacion}"
+            
             self.status_label.config(text=texto_estado)
+        except Exception as e:
+            print(f"Error actualizando barra de estado: {e}")
     
     # ===== MÉTODOS DE FILTRADO Y BÚSQUEDA =====
     
@@ -552,6 +598,10 @@ class SistemaCensoHabitantes:
     def _actualizar_indicadores_estado(self):
         """Actualiza los indicadores de estado de pagos y faenas"""
         try:
+            # Protección: verificar que existen los canvas
+            if not hasattr(self, 'canvas_pagos') or not hasattr(self, 'canvas_faenas'):
+                return
+            
             total_pagos = 0.0
             total_faenas = 0.0
             count = 0
