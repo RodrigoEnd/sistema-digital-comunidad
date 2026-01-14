@@ -273,20 +273,24 @@ class DialogoAgregarPersona:
                 messagebox.showerror("Error", "El nombre es obligatorio")
                 return
             
-            # Verificar duplicados de nombre mediante el gestor
+            # Verificar duplicados de nombre en pagos (en persona local)
             if not gestor_personas.validar_nombre_unico(nombre, None):
-                messagebox.showerror("Error", "Ya existe una persona con ese nombre")
+                messagebox.showerror("Error", "Ya existe una persona con ese nombre en esta cooperación")
                 return
             
             # Sincronizar con API (verificar/agregar en censo)
+            # Esto también evita duplicados en censo
             folio = callback_sincronizar_censo(nombre)
             if not folio:
-                messagebox.showwarning("Aviso", "No se pudo obtener folio desde censo. Se generará folio local.")
+                # Si no se puede obtener folio de censo, generar local
                 folio = callback_generar_folio()
+                messagebox.showinfo("Información", f"Se generó folio local: {folio}\nLa persona se agregará al censo cuando sea necesario.")
+            else:
+                messagebox.showinfo("Éxito", f"Persona vinculada a censo\nFolio: {folio}")
             
-            # BUG FIX #8: Validar que el folio no esté duplicado ANTES de crear
+            # Validar que el folio no esté duplicado EN ESTA COOPERACIÓN
             if any(p.get('folio') == folio for p in gestor_personas.personas):
-                messagebox.showerror("Error", f"Folio {folio} ya está registrado para otra persona.")
+                messagebox.showerror("Error", f"Folio {folio} ya está registrado en esta cooperación para otra persona.")
                 return
             
             persona = {

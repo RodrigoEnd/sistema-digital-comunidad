@@ -132,7 +132,7 @@ class SistemaCensoHabitantes:
                 f"Error durante inicialización: {str(e)}"))
     
     def _iniciar_api(self):
-        """Iniciar servidor API en segundo plano (sin bloqueo)"""
+        """Iniciar servidor API en segundo plano (sin bloqueo, invisible)"""
         try:
             script_dir = os.path.dirname(os.path.abspath(__file__))
             proyecto_raiz = os.path.abspath(os.path.join(script_dir, "..", "..", ".."))
@@ -142,12 +142,23 @@ class SistemaCensoHabitantes:
                 print(f"Error: No se encuentra API en {api_path}")
                 return
             
-            subprocess.Popen([sys.executable, api_path], 
-                           stdout=subprocess.DEVNULL, 
-                           stderr=subprocess.DEVNULL,
-                           creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0)
+            # Crear proceso con ventana invisible en Windows
+            if sys.platform == 'win32':
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                startupinfo.wShowWindow = subprocess.SW_HIDE
+                
+                subprocess.Popen([sys.executable, api_path], 
+                               stdout=subprocess.DEVNULL, 
+                               stderr=subprocess.DEVNULL,
+                               startupinfo=startupinfo,
+                               creationflags=subprocess.CREATE_NO_WINDOW)
+            else:
+                subprocess.Popen([sys.executable, api_path], 
+                               stdout=subprocess.DEVNULL, 
+                               stderr=subprocess.DEVNULL)
             
-            print("Iniciando API local...")
+            print("Iniciando API local (invisible)...")
         except Exception as e:
             print(f"Error iniciando API: {e}")
     

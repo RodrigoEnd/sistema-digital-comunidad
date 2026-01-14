@@ -1124,46 +1124,57 @@ class SistemaControlPagos:
                 self.barra_superior.frame.grid(row=0, column=0, sticky=(tk.W, tk.E))
         
     def sincronizar_con_censo(self, nombre):
-        """Sincronizar persona con la base de datos de censo - buscar folio permanente"""
+        """Sincronizar persona con la base de datos de censo - buscar/crear folio permanente"""
         if MODO_OFFLINE:
             return self.generar_folio_local()
-        try:
-            # Buscar por nombre exacto
-            response = requests.get(f"{self.api_url}/habitantes/nombre/{nombre}",
-                                    timeout=5)
-            if response.status_code == 200:
-                data = response.json()
-                if data['success'] and data['habitante']:
-                    folio = data['habitante']['folio']
-                    # Verificar que el folio no esté duplicado en esta cooperación
-                    if not any(p.get('folio') == folio and p['nombre'].lower() != nombre.lower() for p in self.personas):
-                        return folio
-                    else:
-                        print(f"Advertencia: Folio {folio} ya usado en cooperación por otra persona")
-                        return None
-        except Exception as e:
-            print(f"Error al buscar en censo: {e}")
         
-        # Si no existe, intentar agregarlo al censo
         try:
-            response = requests.post(f"{self.api_url}/habitantes",
-                                    json={'nombre': nombre},
-                                    timeout=5)
-            if response.status_code == 200:
-                data = response.json()
-                if data['success'] and data['habitante']:
-                    folio = data['habitante']['folio']
-                    # Verificar que el folio no esté duplicado
-                    if not any(p.get('folio') == folio for p in self.personas):
+            # PASO 1: Verificar que el nombre no sea duplicado en pagos
+            nombre_lower = nombre.lower().strip()
+            for persona in self.personas:
+                if persona['nombre'].lower().strip() == nombre_lower:
+                    # Ya existe en pagos, no agregar duplicado
+                    return persona.get('folio')
+            
+            # PASO 2: Buscar por nombre exacto en censo
+            try:
+                response = requests.get(f"{self.api_url}/habitantes/nombre/{nombre}",
+                                        timeout=5)
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get('success') and data.get('habitante'):
+                        folio = data['habitante']['folio']
+                        # Verificar que el folio no esté duplicado en esta cooperación
+                        if not any(p.get('folio') == folio for p in self.personas):
+                            return folio
+                        else:
+                            print(f"Advertencia: Folio {folio} ya existe en esta cooperación")
+                            return folio
+            except Exception as e:
+                print(f"Error al buscar en censo por nombre: {e}")
+            
+            # PASO 3: Si no existe, crear nuevo habitante en censo
+            try:
+                response = requests.post(f"{self.api_url}/habitantes",
+                                        json={'nombre': nombre},
+                                        timeout=5)
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get('success') and data.get('habitante'):
+                        folio = data['habitante']['folio']
+                        print(f"Habitante agregado a censo: {nombre} (Folio: {folio})")
                         return folio
-                    else:
-                        print(f"Advertencia: Folio {folio} duplicado")
-                        return None
+                else:
+                    print(f"Error al crear habitante: Status {response.status_code}")
+            except Exception as e:
+                print(f"Error al agregar al censo: {e}")
+            
+            # Si todo falla, retornar None para que genere folio local
+            return None
+            
         except Exception as e:
-            print(f"Error al agregar al censo: {e}")
-        
-        # Si todo falla, no retornar nada
-        return None
+            print(f"Error general en sincronizar_con_censo: {e}")
+            return None
 
     def asegurar_api_activa(self):
         """Delegado a GestorAPI"""
