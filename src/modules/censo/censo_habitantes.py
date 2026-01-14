@@ -21,7 +21,7 @@ if proyecto_raiz not in sys.path:
 from src.config import API_URL, TEMAS, CENSO_DEBOUNCE_MS, CENSO_COLUMNAS, CENSO_COLUMNAS_ANCHOS, CENSO_NOTA_MAX_DISPLAY
 from src.ui.estilos_globales import TEMA_GLOBAL
 from src.ui.tema_moderno import FUENTES
-from src.core.logger import registrar_operacion
+from src.core.logger import registrar_operacion, registrar_error
 from src.modules.indicadores.indicadores_estado import calcular_estado_habitante
 
 # Imports de módulos internos del censo
@@ -104,19 +104,18 @@ class SistemaCensoHabitantes:
         hilo.start()
     
     def _hilo_inicializacion(self):
-        """Hilo para inicializar API y cargar datos sin bloquear UI"""
+        """Hilo para cargar datos sin bloquear UI. API debe estar iniciada desde menú principal"""
         try:
-            # Verificar o iniciar API
-            if not self.verificar_api():
-                self._iniciar_api()
-                # Esperar a que API esté lista (pero en hilo separado)
-                for i in range(40):  # máx 10 segundos
-                    time.sleep(0.25)
-                    if self.verificar_api():
-                        print("API iniciada correctamente")
-                        break
+            # Verificar si API está disponible (se inicia desde menú principal)
+            for i in range(20):  # máx 5 segundos esperando API
+                if self.verificar_api():
+                    print("API disponible")
+                    self._api_verificada = True
+                    break
+                time.sleep(0.25)
             
-            self._api_verificada = True
+            if not self._api_verificada:
+                print("Advertencia: API no disponible. Operando en modo limitado.")
             
             # Cargar datos
             self.cargar_habitantes()
@@ -131,36 +130,12 @@ class SistemaCensoHabitantes:
             self.root.after(0, lambda: messagebox.showerror("Error", 
                 f"Error durante inicialización: {str(e)}"))
     
+    # NOTA: API se inicia desde menu_principal.py, no desde este módulo
+    # Mantener estos métodos comentados para referencia
+    
     def _iniciar_api(self):
-        """Iniciar servidor API en segundo plano (sin bloqueo, invisible)"""
-        try:
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            proyecto_raiz = os.path.abspath(os.path.join(script_dir, "..", "..", ".."))
-            api_path = os.path.join(proyecto_raiz, "src", "api", "api_local.py")
-            
-            if not os.path.exists(api_path):
-                print(f"Error: No se encuentra API en {api_path}")
-                return
-            
-            # Crear proceso con ventana invisible en Windows
-            if sys.platform == 'win32':
-                startupinfo = subprocess.STARTUPINFO()
-                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                startupinfo.wShowWindow = subprocess.SW_HIDE
-                
-                subprocess.Popen([sys.executable, api_path], 
-                               stdout=subprocess.DEVNULL, 
-                               stderr=subprocess.DEVNULL,
-                               startupinfo=startupinfo,
-                               creationflags=subprocess.CREATE_NO_WINDOW)
-            else:
-                subprocess.Popen([sys.executable, api_path], 
-                               stdout=subprocess.DEVNULL, 
-                               stderr=subprocess.DEVNULL)
-            
-            print("Iniciando API local (invisible)...")
-        except Exception as e:
-            print(f"Error iniciando API: {e}")
+        """DEPRECATED: API se inicia desde menu_principal.py"""
+        pass
     
     def verificar_api(self):
         """Verificar que la API está funcionando"""
@@ -343,6 +318,8 @@ class SistemaCensoHabitantes:
         self.menu_contextual.add_command(label="Marcar como inactivo", command=lambda: self._actualizar_estado_seleccion(False))
         self.menu_contextual.add_separator()
         self.menu_contextual.add_command(label="Colocar nota", command=self._colocar_nota_seleccion)
+        self.menu_contextual.add_separator()
+        self.menu_contextual.add_command(label="🗑️  Eliminar Habitante", command=self._eliminar_habitante_seleccion)
         self.tree.bind('<Button-3>', self._mostrar_menu_contextual)
         
         # Eventos
@@ -595,6 +572,43 @@ class SistemaCensoHabitantes:
             return
         
         colocar_nota_habitante(folio, nota, self.api_url, self.cargar_habitantes)
+    
+    def _eliminar_habitante_seleccion(self):
+        """Elimina el habitante seleccionado con confirmación"""
+        seleccion = self.tree.selection()
+        if not seleccion:
+            messagebox.showwarning("Selección", "Selecciona un habitante primero")
+            return
+        
+        # Obtener datos del habitante
+        item_id = seleccion[0]
+        valores = self.tree.item(item_id, 'values')
+        if not valores or len(valores) < 2:
+            messagebox.showerror("Error", "No se pudo obtener datos del habitante")
+            return
+        
+        folio, nombre = valores[0], valores[1]
+        
+        # Confirmar eliminación
+        if not messagebox.askyesno("Confirmar Eliminación", 
+                                  f"¿Desea eliminar a {nombre} (Folio: {folio})?\n\nEsta acción NO se puede deshacer."):
+            return
+        
+        # Ejecutar eliminación via API
+        try:
+            response = requests.delete(f"{self.api_url}/habitantes/{folio}", timeout=5)
+            if response.status_code == 200:
+                data = response.json()
+                if data.get('success'):
+                    messagebox.showinfo("Éxito", f"Habitante {nombre} eliminado correctamente")
+                    self.cargar_habitantes()
+                else:
+                    messagebox.showerror("Error", data.get('message', 'Error al eliminar'))
+            else:
+                messagebox.showerror("Error", f"Error del servidor: {response.status_code}")
+        except Exception as e:
+            messagebox.showerror("Error", f"No se pudo conectar con la API: {str(e)}")
+            registrar_error('censo_habitantes', '_eliminar_habitante_seleccion', str(e))
     
     def __folio_seleccionado(self):
         """Obtiene el folio del habitante seleccionado"""

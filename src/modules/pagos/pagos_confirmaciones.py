@@ -17,7 +17,7 @@ class ConfirmacionMejorada:
         """
         dialog = tk.Toplevel(parent)
         dialog.title("⚠️  Confirmar Eliminación")
-        dialog.geometry("450x300")
+        dialog.geometry("500x380")
         dialog.transient(parent)
         dialog.grab_set()
         dialog.resizable(False, False)
@@ -27,49 +27,49 @@ class ConfirmacionMejorada:
         main_frame.pack(fill=tk.BOTH, expand=True, padx=0, pady=0)
         
         # Header rojo
-        header = tk.Frame(main_frame, bg='#e74c3c', height=80)
+        header = tk.Frame(main_frame, bg='#e74c3c', height=90)
         header.pack(fill=tk.X, side=tk.TOP)
         header.pack_propagate(False)
         
         tk.Label(header, text="⚠️  ADVERTENCIA", font=('Arial', 16, 'bold'),
                 bg='#e74c3c', fg='#ffffff').pack(pady=(15, 5))
         tk.Label(header, text="Está a punto de eliminar una persona",
-                bg='#e74c3c', fg='#ffffff', font=('Arial', 10)).pack()
+                bg='#e74c3c', fg='#ffffff', font=('Arial', 11)).pack()
         
         # Contenido
         content = tk.Frame(main_frame, bg=tema_global.get('bg_principal', '#ffffff'))
-        content.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+        content.pack(fill=tk.BOTH, expand=True, padx=25, pady=20)
         
         # Información de la persona
-        tk.Label(content, text="Información de la Persona:", font=('Arial', 10, 'bold'),
+        tk.Label(content, text="Información de la Persona:", font=('Arial', 11, 'bold'),
                 bg=tema_global.get('bg_principal', '#ffffff'),
-                fg=tema_global.get('fg_principal', '#333333')).pack(anchor=tk.W, pady=(0, 10))
+                fg=tema_global.get('fg_principal', '#333333')).pack(anchor=tk.W, pady=(0, 12))
         
         # Detalles
         detalle_frame = tk.Frame(content, bg=tema_global.get('bg_secundario', '#f0f0f0'),
                                 relief=tk.FLAT, bd=1)
-        detalle_frame.pack(fill=tk.X, padx=10, pady=(0, 15))
+        detalle_frame.pack(fill=tk.X, padx=10, pady=(0, 20))
         
-        tk.Label(detalle_frame, text=f"Nombre: {nombre_persona}", font=('Arial', 10),
+        tk.Label(detalle_frame, text=f"Nombre: {nombre_persona}", font=('Arial', 11),
                 bg=tema_global.get('bg_secundario', '#f0f0f0'),
-                fg=tema_global.get('fg_principal', '#333333')).pack(anchor=tk.W, padx=10, pady=5)
+                fg=tema_global.get('fg_principal', '#333333')).pack(anchor=tk.W, padx=12, pady=6)
         
-        tk.Label(detalle_frame, text=f"Folio: {folio}", font=('Arial', 10),
+        tk.Label(detalle_frame, text=f"Folio: {folio}", font=('Arial', 11),
                 bg=tema_global.get('bg_secundario', '#f0f0f0'),
-                fg=tema_global.get('fg_principal', '#333333')).pack(anchor=tk.W, padx=10, pady=5)
+                fg=tema_global.get('fg_principal', '#333333')).pack(anchor=tk.W, padx=12, pady=6)
         
         tk.Label(detalle_frame, text=f"Pagado: ${total_pagado:.2f} de ${monto_esperado:.2f}",
-                font=('Arial', 10), bg=tema_global.get('bg_secundario', '#f0f0f0'),
-                fg='#27ae60' if total_pagado >= monto_esperado else '#e74c3c').pack(anchor=tk.W, padx=10, pady=5)
+                font=('Arial', 11), bg=tema_global.get('bg_secundario', '#f0f0f0'),
+                fg='#27ae60' if total_pagado >= monto_esperado else '#e74c3c').pack(anchor=tk.W, padx=12, pady=6)
         
         # Mensaje de confirmación
         tk.Label(content, text="Esta acción NO se puede deshacer.",
-                font=('Arial', 10, 'bold'), bg=tema_global.get('bg_principal', '#ffffff'),
-                fg='#e74c3c').pack(anchor=tk.W, pady=(0, 15))
+                font=('Arial', 11, 'bold'), bg=tema_global.get('bg_principal', '#ffffff'),
+                fg='#e74c3c').pack(anchor=tk.W, pady=(0, 20))
         
         # Botones
         btn_frame = tk.Frame(main_frame, bg=tema_global.get('bg_principal', '#ffffff'))
-        btn_frame.pack(fill=tk.X, padx=20, pady=20)
+        btn_frame.pack(fill=tk.X, padx=25, pady=(0, 20), side=tk.BOTTOM)
         
         resultado = {'confirmado': False}
         
@@ -80,16 +80,20 @@ class ConfirmacionMejorada:
         def cancelar():
             dialog.destroy()
         
+        # Botón de cancelación
         btn_cancelar = tk.Button(btn_frame, text="Cancelar", command=cancelar,
                                 bg=tema_global.get('bg_secundario', '#f0f0f0'),
                                 fg=tema_global.get('fg_principal', '#333333'),
-                                font=('Arial', 10), padx=20, pady=8, relief=tk.FLAT, bd=1)
-        btn_cancelar.pack(side=tk.LEFT, padx=(0, 10))
+                                font=('Arial', 11), padx=30, pady=10, relief=tk.FLAT, bd=1,
+                                cursor='hand2')
+        btn_cancelar.pack(side=tk.LEFT, padx=(0, 12), fill=tk.X, expand=True)
         
+        # Botón de confirmación
         btn_confirmar = tk.Button(btn_frame, text="Sí, Eliminar", command=confirmar,
                                  bg='#e74c3c', fg='#ffffff',
-                                 font=('Arial', 10, 'bold'), padx=20, pady=8, relief=tk.FLAT, bd=0)
-        btn_confirmar.pack(side=tk.RIGHT)
+                                 font=('Arial', 11, 'bold'), padx=30, pady=10, relief=tk.FLAT, bd=0,
+                                 cursor='hand2')
+        btn_confirmar.pack(side=tk.RIGHT, fill=tk.X, expand=True)
         
         dialog.wait_window()
         return resultado['confirmado']

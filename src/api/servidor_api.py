@@ -121,6 +121,30 @@ def agregar_habitante():
         })
 
 
+@app.route('/api/habitantes/<folio>', methods=['DELETE'])
+def eliminar_habitante(folio):
+    """Eliminar habitante (soft delete - marca como inactivo)"""
+    db_inst = obtener_db()
+    
+    try:
+        exito, mensaje = db_inst.eliminar_habitante(folio)
+        if exito:
+            return jsonify({
+                'success': True,
+                'message': mensaje
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': mensaje
+            }), 400
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Error al eliminar habitante: {str(e)}'
+        }), 500
+
+
 @app.route('/ping', methods=['GET'])
 def ping():
     """Verificar que la API está funcionando"""
