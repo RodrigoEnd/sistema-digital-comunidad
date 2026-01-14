@@ -2,11 +2,25 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 import sys
 import os
+import logging
+from io import StringIO
 
 # Configurar path para imports cuando se ejecuta directamente
 proyecto_raiz = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 if proyecto_raiz not in sys.path:
     sys.path.insert(0, proyecto_raiz)
+
+# Suprimir logs de Flask completamente cuando se ejecuta en segundo plano
+if __name__ == '__main__':
+    # Desactivar logs de Flask
+    log = logging.getLogger('werkzeug')
+    log.setLevel(logging.ERROR)
+    log.disabled = True
+    
+    # Redirigir stdout/stderr al null para que no muestre nada
+    null_stream = StringIO()
+    sys.stdout = null_stream
+    sys.stderr = null_stream
 
 # NO cargar la BD al import time - hacerlo lazy
 db = None
@@ -178,5 +192,23 @@ def ping():
     })
 
 if __name__ == '__main__':
-    # Ocultar que la API se está ejecutando - no mostrar output
-    app.run(host='127.0.0.1', port=5000, debug=False, use_reloader=False)
+    try:
+        # Ejecutar API en silencio completo - sin mostrar nada en consola
+        app.run(
+            host='127.0.0.1', 
+            port=5000, 
+            debug=False, 
+            use_reloader=False,
+            threaded=True
+        )
+    except Exception as e:
+        # Si hay error, escribir a un archivo de log silenciosamente
+        try:
+            import os
+            log_dir = os.path.join(os.path.expanduser('~'), 'AppData', 'Local', 'SistemaComunidad')
+            os.makedirs(log_dir, exist_ok=True)
+            with open(os.path.join(log_dir, 'api_error.log'), 'a') as f:
+                f.write(f"Error en API: {e}\n")
+        except:
+            pass
+

@@ -170,16 +170,13 @@ class MenuPrincipal:
             text="● API: Error - No se pudo conectar", fg="#e74c3c"))
     
     def iniciar_api(self):
-        """Iniciar servidor API en segundo plano - SIN MOSTRAR VENTANA"""
+        """Iniciar servidor API en segundo plano - SIN MOSTRAR VENTANA NI OUTPUT"""
         try:
             script_dir = os.path.dirname(os.path.abspath(__file__))
             api_path = os.path.join(script_dir, "src", "api", "api_local.py")
             
-            # Crear archivo de log para diagnóstico
-            log_path = os.path.join(os.path.expanduser('~'), 'AppData', 'Local', 
-                                    'SistemaComunidad', 'api_debug.log')
-            os.makedirs(os.path.dirname(log_path), exist_ok=True)
-            log_file = open(log_path, 'w')
+            # Crear archivo de log DEVNULL para descartar toda salida
+            devnull = open(os.devnull, 'w')
             
             if sys.platform == 'win32':
                 # Windows: usar STARTUPINFO para ocultar ventana COMPLETAMENTE
@@ -195,8 +192,8 @@ class MenuPrincipal:
                 
                 self.proceso_api = subprocess.Popen(
                     [sys.executable, api_path],
-                    stdout=log_file,
-                    stderr=subprocess.STDOUT,  # Redirigir stderr a stdout
+                    stdout=devnull,
+                    stderr=devnull,             # Descartar stderr también
                     stdin=subprocess.DEVNULL,   # No leer entrada estándar
                     startupinfo=startupinfo,
                     creationflags=creation_flags,
@@ -206,22 +203,18 @@ class MenuPrincipal:
                 # Linux/Mac
                 self.proceso_api = subprocess.Popen(
                     [sys.executable, api_path],
-                    stdout=log_file,
-                    stderr=subprocess.STDOUT,
+                    stdout=devnull,
+                    stderr=devnull,
                     stdin=subprocess.DEVNULL,
                     start_new_session=True
                 )
-            
-            print(f"[API] Proceso iniciado con PID: {self.proceso_api.pid}")
-            print(f"[API] Logs guardados en: {log_path}")
             
             # Verificar después de 3 segundos en hilo separado (más tiempo para iniciar)
             threading.Thread(target=self._esperar_y_verificar_api, daemon=True).start()
             
         except Exception as e:
-            print(f"[API Error] {e}")
             self.root.after(0, lambda: self.api_status.config(
-                text=f"● API: Error - {str(e)[:20]}", fg="#e74c3c"))
+                text=f"● API: Error", fg="#e74c3c"))
     
     def _esperar_y_verificar_api(self):
         """Espera a que API esté lista y verifica"""
@@ -232,7 +225,6 @@ class MenuPrincipal:
                 # Timeout corto para respuesta
                 response = requests.get("http://127.0.0.1:5000/ping", timeout=0.5)
                 if response.status_code == 200:
-                    print("[API] Conectada exitosamente")
                     self.root.after(0, lambda: self.api_status.config(
                         text="● API: Activa", fg="#27ae60"))
                     self.api_verificada = True
@@ -240,24 +232,13 @@ class MenuPrincipal:
             except requests.exceptions.Timeout:
                 # Timeout - API aún cargando
                 pass
-            except requests.exceptions.ConnectionError as e:
+            except requests.exceptions.ConnectionError:
                 # Puerto no escucha - API fallando
-                if intento == 29:  # Último intento
-                    print(f"[API] Error de conexión: {e}")
-                    # Mostrar contenido del log si existe
-                    try:
-                        log_path = os.path.join(os.path.expanduser('~'), 'AppData', 'Local', 
-                                               'SistemaComunidad', 'api_debug.log')
-                        with open(log_path, 'r') as f:
-                            log_content = f.read()
-                            if log_content:
-                                print(f"[API Log]:\n{log_content[:500]}")
-                    except:
-                        pass
+                pass
         
-        print("[API] No se pudo conectar después de 15 segundos")
+        # Si no se conecta después de 15 segundos, mostrar error silenciosamente
         self.root.after(0, lambda: self.api_status.config(
-            text="● API: Error conectando - Ver logs", fg="#e74c3c"))
+            text="● API: No disponible", fg="#e74c3c"))
     
     def abrir_censo(self):
         """Abrir sistema de censo"""
