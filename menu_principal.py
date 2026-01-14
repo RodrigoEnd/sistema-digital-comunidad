@@ -19,6 +19,10 @@ from src.config import MODO_OFFLINE
 import requests
 from src.auth.gestor_perfiles import autenticar, agregar_delegado, listar_delegados, obtener_estadisticas
 
+# ===== IMPORTANTE: Importar servidor API (se ejecutará en hilo separado) =====
+# NO usar subprocess - ejecutar directamente en hilo
+from src.api.servidor_api import iniciar_api_en_hilo
+
 class MenuPrincipal:
     def __init__(self, root):
         self.root = root
@@ -36,9 +40,8 @@ class MenuPrincipal:
         
         self.root.configure(bg=self.bg_principal)
         
-        # Rastrear procesos abiertos
+        # Rastrear procesos abiertos (solo censo ahora, API en hilo)
         self.proceso_censo = None
-        self.proceso_api = None
         self.api_verificada = False
         self.verificando_api = False
         
@@ -170,79 +173,15 @@ class MenuPrincipal:
             text="● API: Error - No se pudo conectar", fg="#e74c3c"))
     
     def iniciar_api(self):
-        """Iniciar servidor API en segundo plano - COMPLETAMENTE INVISIBLE"""
+        """Iniciar servidor API en hilo separado - SIN CREAR VENTANA EXTERNA"""
         try:
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            # Usar el wrapper silencioso en lugar de api_local.py directamente
-            api_wrapper = os.path.join(script_dir, "src", "api", "run_api_silent.py")
-            api_dir = os.path.dirname(api_wrapper)
+            # Iniciar API en hilo daemon (no crea proceso externo)
+            iniciar_api_en_hilo()
             
-            if sys.platform == 'win32':
-                # Windows: OPCIÓN 1 - Usar pythonw.exe (sin consola)
-                python_exe = sys.executable
-                
-                # Intentar reemplazar python.exe con pythonw.exe
-                if python_exe.endswith('python.exe'):
-                    pythonw_exe = python_exe.replace('python.exe', 'pythonw.exe')
-                    if os.path.exists(pythonw_exe):
-                        python_exe = pythonw_exe
-                
-                # OPCIÓN 2 - Si pythonw no existe, usar cmd.exe con flags especiales
-                if not python_exe.endswith('pythonw.exe'):
-                    # Crear batch file temporal muy simple
-                    import tempfile
-                    batch_file = os.path.join(tempfile.gettempdir(), f'api_{os.getpid()}.bat')
-                    
-                    with open(batch_file, 'w', encoding='utf-8') as f:
-                        # Batch minimalista que ejecuta python en background
-                        f.write('@echo off\n')
-                        f.write('setlocal enabledelayedexpansion\n')
-                        f.write(f'cd /d "{api_dir}"\n')
-                        f.write(f'start "" /B /MIN "{python_exe}" "{os.path.basename(api_wrapper)}" >nul 2>&1\n')
-                        f.write('exit /b\n')
-                    
-                    # Ejecutar batch sin mostrar ventana
-                    startupinfo = subprocess.STARTUPINFO()
-                    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                    startupinfo.wShowWindow = subprocess.SW_HIDE
-                    
-                    self.proceso_api = subprocess.Popen(
-                        ['cmd.exe', '/c', batch_file],
-                        startupinfo=startupinfo,
-                        creationflags=subprocess.CREATE_NO_WINDOW,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL
-                    )
-                else:
-                    # Usar pythonw.exe directamente
-                    startupinfo = subprocess.STARTUPINFO()
-                    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                    startupinfo.wShowWindow = subprocess.SW_HIDE
-                    
-                    self.proceso_api = subprocess.Popen(
-                        [python_exe, api_wrapper],
-                        startupinfo=startupinfo,
-                        creationflags=subprocess.CREATE_NO_WINDOW,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                        cwd=api_dir
-                    )
-            else:
-                # Linux/Mac
-                self.proceso_api = subprocess.Popen(
-                    [sys.executable, api_wrapper],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    stdin=subprocess.DEVNULL,
-                    start_new_session=True,
-                    cwd=api_dir
-                )
-            
-            # Verificar en hilo separado
+            # Verificar conexión en hilo separado
             threading.Thread(target=self._esperar_y_verificar_api, daemon=True).start()
             
         except Exception as e:
-            # Error silencioso
             self.root.after(0, lambda: self.api_status.config(
                 text="● API: Error", fg="#e74c3c"))
     
