@@ -3,24 +3,41 @@ from flask_cors import CORS
 import sys
 import os
 import logging
-from io import StringIO
+import warnings
+
+# ==================== SILENCIAR COMPLETAMENTE - ORDEN CRÍTICO ====================
+
+# 1. Redirigir stdout/stderr ANTES de cualquier import que produzca output
+_devnull = open(os.devnull, 'w')
+sys.stdout = _devnull
+sys.stderr = _devnull
+
+# 2. Desactivar warnings de Python
+warnings.filterwarnings('ignore')
+
+# 3. Desactivar todos los logs
+logging.disable(logging.CRITICAL)
+for logger in ['flask', 'werkzeug', 'urllib3', 'requests']:
+    logging.getLogger(logger).disabled = True
+    logging.getLogger(logger).setLevel(logging.CRITICAL)
 
 # Configurar path para imports cuando se ejecuta directamente
 proyecto_raiz = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 if proyecto_raiz not in sys.path:
     sys.path.insert(0, proyecto_raiz)
 
-# Suprimir logs de Flask completamente cuando se ejecuta en segundo plano
-if __name__ == '__main__':
-    # Desactivar logs de Flask
-    log = logging.getLogger('werkzeug')
-    log.setLevel(logging.ERROR)
-    log.disabled = True
-    
-    # Redirigir stdout/stderr al null para que no muestre nada
-    null_stream = StringIO()
-    sys.stdout = null_stream
-    sys.stderr = null_stream
+# Crear app Flask con logging desactivado
+app = Flask(__name__)
+app.logger.disabled = True
+app.logger.setLevel(logging.CRITICAL)
+
+# Desactivar logs de werkzeug (el logger de Flask)
+log_werkzeug = logging.getLogger('werkzeug')
+log_werkzeug.disabled = True
+log_werkzeug.setLevel(logging.CRITICAL)
+
+# Activar CORS sin mostrar logs
+CORS(app)
 
 # NO cargar la BD al import time - hacerlo lazy
 db = None
@@ -193,22 +210,16 @@ def ping():
 
 if __name__ == '__main__':
     try:
-        # Ejecutar API en silencio completo - sin mostrar nada en consola
+        # Ejecutar API en silencio completo - modo producción
         app.run(
             host='127.0.0.1', 
             port=5000, 
             debug=False, 
             use_reloader=False,
-            threaded=True
+            threaded=True,
+            processes=1
         )
-    except Exception as e:
-        # Si hay error, escribir a un archivo de log silenciosamente
-        try:
-            import os
-            log_dir = os.path.join(os.path.expanduser('~'), 'AppData', 'Local', 'SistemaComunidad')
-            os.makedirs(log_dir, exist_ok=True)
-            with open(os.path.join(log_dir, 'api_error.log'), 'a') as f:
-                f.write(f"Error en API: {e}\n")
-        except:
-            pass
+    except Exception:
+        # Ignorar cualquier error silenciosamente
+        pass
 
