@@ -88,6 +88,13 @@ class BaseDatos:
         """Obtener todos los habitantes"""
         return self.habitantes
     
+    def eliminar_habitante(self, folio):
+        """Eliminar habitante por folio (soft delete)"""
+        exito, mensaje = self.bd.eliminar_habitante(folio)
+        if exito:
+            self.cargar_datos()
+        return exito, mensaje
+    
     def actualizar_habitante(self, folio, cambios):
         """Actualizar habitante por folio"""
         exito, mensaje = self.bd.actualizar_habitante(folio, **cambios)
