@@ -39,3 +39,19 @@ Thumbs.db
 test_db.py
 check_pagos.py
 check_pagos2.py
+datos/lista_habitantes.txt
+
+# Documentación temporal
+*OBSOLETO*
+*backup*
+*_backup*
+ANALISIS_*.md
+LIMPIEZA_*.md
+INSTRUCCIONES_*.md
+CAMBIOS_*.md
+CORRECCIONES_*.txt
+REPORTE_*.txt
+
+# Tests no esenciales
+tests/test_*servicio*.py
+tests/test_*repo*.py

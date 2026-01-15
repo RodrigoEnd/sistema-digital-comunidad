@@ -10,14 +10,14 @@ from tkinter import ttk
 class CensoPanelDetalles:
     """Clase para gestionar el panel lateral de detalles"""
     
-    def __init__(self, parent, api_url, callback_actualizar, 
+    def __init__(self, parent, gestor, callback_actualizar, 
                  callback_pagos, callback_faenas, callback_nota, callback_estado):
         """
         Inicializa el panel de detalles
         
         Args:
             parent: Frame contenedor
-            api_url: URL de la API
+            gestor: Instancia de GestorDatosGlobal
             callback_actualizar: Función para actualizar la lista
             callback_pagos: Función para abrir control de pagos
             callback_faenas: Función para abrir registro de faenas
@@ -25,7 +25,7 @@ class CensoPanelDetalles:
             callback_estado: Función para cambiar estado
         """
         self.parent = parent
-        self.api_url = api_url
+        self.gestor = gestor
         self.callback_actualizar = callback_actualizar
         self.callback_pagos = callback_pagos
         self.callback_faenas = callback_faenas

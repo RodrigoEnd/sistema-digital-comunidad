@@ -5,17 +5,16 @@ Contiene ventanas emergentes para agregar habitantes, estadísticas, historial, 
 
 import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog, filedialog
-import requests
 from datetime import datetime
 import os
 from collections import Counter
 
-from src.config import API_URL
+from src.core.gestor_datos_global import obtener_gestor
 from src.core.logger import registrar_operacion, registrar_error
 from src.core.validadores import validar_nombre
 
 
-def agregar_habitante(root, api_url, habitantes, callback_actualizar):
+def agregar_habitante(root, habitantes, callback_actualizar):
     """Muestra diálogo para agregar nuevo habitante"""
     dialog = tk.Toplevel(root)
     dialog.title("Agregar Nuevo Habitante")
@@ -54,24 +53,23 @@ def agregar_habitante(root, api_url, habitantes, callback_actualizar):
                 return
         
         try:
-            response = requests.post(f"{api_url}/habitantes",
-                                    json={'nombre': nombre_validado},
-                                    timeout=5)
-            data = response.json()
+            # Usar gestor directo en vez de API
+            gestor = obtener_gestor()
+            habitante, mensaje = gestor.agregar_habitante(nombre_validado)
             
-            if data['success']:
+            if habitante:
                 registrar_operacion('CENSO_AGREGAR', 'Habitante agregado desde censo', 
-                    {'nombre': nombre, 'folio': data['habitante']['folio']})
-                messagebox.showinfo("Exito", 
-                    f"Habitante agregado correctamente\n"
-                    f"Folio asignado: {data['habitante']['folio']}")
+                    {'nombre': nombre_validado, 'folio': habitante['folio']})
+                # SIN ALERTA - solo cerrar y actualizar
                 dialog.destroy()
                 callback_actualizar()
             else:
-                registrar_error('CENSO_AGREGAR', data['mensaje'])
-                messagebox.showerror("Error", data['mensaje'])
+                registrar_error('censo_dialogos', 'agregar_habitante', mensaje)
+                messagebox.showerror("Error", mensaje)
         except Exception as e:
-            messagebox.showerror("Error", f"Error al agregar: {str(e)}")
+            error_msg = f"Error al agregar: {str(e)}"
+            registrar_error('censo_dialogos', 'agregar_habitante', str(e), contexto=f"nombre={nombre_validado}")
+            messagebox.showerror("Error", error_msg)
     
     botones = ttk.Frame(dialog)
     botones.pack(pady=10)
@@ -82,7 +80,7 @@ def agregar_habitante(root, api_url, habitantes, callback_actualizar):
     nombre_entry.focus_set()
 
 
-def dialogo_editar_nota(root, habitante, api_url, callback_actualizar):
+def dialogo_editar_nota(root, habitante, gestor, callback_actualizar):
     """Muestra diálogo para editar la nota de un habitante"""
     dialog = tk.Toplevel(root)
     dialog.title(f"Nota - {habitante['nombre']}")
@@ -104,17 +102,17 @@ def dialogo_editar_nota(root, habitante, api_url, callback_actualizar):
     def guardar_nota():
         nota_nueva = nota_text.get('1.0', 'end-1c').strip()
         try:
-            resp = requests.patch(f"{api_url}/habitantes/{habitante['folio']}", 
-                                json={'nota': nota_nueva}, timeout=5)
-            if resp.status_code == 200:
+            exito, mensaje = gestor.actualizar_habitante(habitante['folio'], nota=nota_nueva)
+            if exito:
                 registrar_operacion('CENSO_NOTA', 'Nota actualizada', {'folio': habitante['folio']})
                 messagebox.showinfo("Éxito", "Nota guardada correctamente")
                 dialog.destroy()
                 callback_actualizar()
             else:
-                messagebox.showerror("Error", f"HTTP {resp.status_code}: {resp.text}")
+                messagebox.showerror("Error", mensaje)
         except Exception as e:
             messagebox.showerror("Error", f"No se pudo guardar: {e}")
+            registrar_error('censo_dialogos', 'dialogo_editar_nota', str(e), contexto=f"folio={habitante['folio']}")
     
     botones_frame = ttk.Frame(dialog)
     botones_frame.pack(pady=10)

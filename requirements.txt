@@ -17,6 +17,9 @@ requests>=2.31.0        # Comunicación HTTP entre sistemas (censo, pagos, faena
 openpyxl>=3.1.0         # Generación de archivos Excel para reportes
 reportlab>=4.0.0        # Generación de PDFs (opcional)
 
+# === Optimización y Rendimiento ===
+psutil>=5.9.0           # Monitoreo y optimización de recursos del sistema
+
 # === Empaquetado ===
 pyinstaller>=6.3.0      # Crear ejecutables .exe para distribución
 

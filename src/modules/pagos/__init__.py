@@ -11,7 +11,6 @@ from .pagos_constantes import (
 from .pagos_gestor_cooperaciones import GestorCooperaciones
 from .pagos_gestor_personas import GestorPersonas
 from .pagos_gestor_datos import GestorDatos
-from .pagos_gestor_api import GestorAPI
 from .pagos_seguridad import GestorSeguridad
 from .pagos_utilidades import UtiliPagos
 
@@ -21,5 +20,5 @@ __all__ = [
     'ESTILOS_ESTADOS', 'FILTROS_RAPIDOS', 'ATAJOS_TECLADO',
     'PERMISOS_ACCIONES', 'TIMERS', 'PATRONES', 'MENSAJES', 'LIMITES',
     'GestorCooperaciones', 'GestorPersonas', 'GestorDatos',
-    'GestorAPI', 'GestorSeguridad', 'UtiliPagos'
+    'GestorSeguridad', 'UtiliPagos'
 ]

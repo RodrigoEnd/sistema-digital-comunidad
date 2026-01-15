@@ -1,14 +1,14 @@
 """Servicio de lógica de negocio para faenas."""
 from datetime import datetime
 from typing import Any, Dict, List, Optional
-import requests
+from src.core.gestor_datos_global import obtener_gestor
 
 
 class FaenasServicio:
     """Reglas de negocio para faenas sin dependencias de UI."""
 
-    def __init__(self, api_url: str):
-        self.api_url = api_url
+    def __init__(self):
+        self.gestor = obtener_gestor()
 
     def calcular_resumen_anual(self, faenas: List[Dict[str, Any]], anio: int) -> Dict[str, Any]:
         """Calcula puntos por persona para un año específico.
@@ -62,12 +62,8 @@ class FaenasServicio:
             Dict con 'actualizados', 'total_participantes', 'habitantes_cache'
         """
         try:
-            resp = requests.get(f"{self.api_url}/habitantes", timeout=5)
-            if resp.status_code != 200:
-                return {'ok': False, 'error': 'No se pudo obtener habitantes'}
-            
-            data = resp.json()
-            habitantes_todos = data.get('habitantes', [])
+            # Obtener habitantes directamente del gestor
+            habitantes_todos = self.gestor.obtener_habitantes(incluir_inactivos=True)
             habitantes = [h for h in habitantes_todos if h.get('activo', True)]
             
             # Crear mapeo nombre -> habitante

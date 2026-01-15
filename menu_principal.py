@@ -1,6 +1,7 @@
 """
 Menú Principal - Sistema de Gestión Comunitaria
 Interfaz gráfica para seleccionar módulos del sistema
+SIN API - Arquitectura simplificada con Gestor Centralizado
 """
 
 import tkinter as tk
@@ -8,20 +9,17 @@ from tkinter import ttk, messagebox
 import subprocess
 import sys
 import os
-import ctypes
-import threading
-import time
 
 # Configurar rutas
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from src.config import MODO_OFFLINE
-import requests
-from src.auth.gestor_perfiles import autenticar, agregar_delegado, listar_delegados, obtener_estadisticas
+from src.core.gestor_datos_global import obtener_gestor
+from src.core.optimizacion_rendimiento import optimizar_rendimiento_sistema, configurar_tkinter_rendimiento
 
-# ===== IMPORTANTE: Importar servidor API (se ejecutará en hilo separado) =====
-# NO usar subprocess - ejecutar directamente en hilo
-from src.api.servidor_api import iniciar_api_en_hilo
+# Aplicar optimizaciones de rendimiento al inicio
+print("\n🚀 Aplicando optimizaciones de rendimiento...")
+optimizar_rendimiento_sistema()
+print()
 
 class MenuPrincipal:
     def __init__(self, root):
@@ -29,6 +27,9 @@ class MenuPrincipal:
         self.root.title("Sistema de Gestión Comunitaria")
         self.root.geometry("600x500")
         self.root.resizable(False, False)
+        
+        # Aplicar optimizaciones de Tkinter
+        configurar_tkinter_rendimiento(self.root)
         
         # Colores
         self.bg_principal = "#f5f7fa"
@@ -40,16 +41,17 @@ class MenuPrincipal:
         
         self.root.configure(bg=self.bg_principal)
         
-        # Rastrear procesos abiertos (solo censo ahora, API en hilo)
+        # Inicializar gestor de datos
+        self.gestor = obtener_gestor()
+        
+        # Rastrear procesos abiertos
         self.proceso_censo = None
-        self.api_verificada = False
-        self.verificando_api = False
+        self.procesos_externos = []
         
         self.configurar_interfaz()
         
-        # Verificar API en hilo separado (no bloquea UI)
-        if not MODO_OFFLINE:
-            threading.Thread(target=self._hilo_verificar_api, daemon=True).start()
+        # Limpieza al cerrar
+        self.root.protocol("WM_DELETE_WINDOW", self.salir)
     
     def configurar_interfaz(self):
         # Header
@@ -81,13 +83,6 @@ class MenuPrincipal:
         botones_frame = tk.Frame(self.root, bg=self.bg_principal)
         botones_frame.pack(expand=True, fill=tk.BOTH, padx=40, pady=30)
         
-        # Estado de API
-        self.api_status = tk.Label(botones_frame, 
-                                   text="● API: Verificando...",
-                                   font=("Arial", 9),
-                                   bg=self.bg_principal, fg="#95a5a6")
-        self.api_status.pack(anchor=tk.W, pady=(0, 15))
-        
         # Botones del menú
         opciones = [
             ("1. Censo de Habitantes", self.abrir_censo, "📋"),
@@ -102,7 +97,7 @@ class MenuPrincipal:
         
         # Footer
         footer = tk.Label(self.root, 
-                         text="Versión 1.0 - 2026",
+                         text="Versión 2.0 - 2026 | Arquitectura Sin API",
                          font=("Arial", 9),
                          bg=self.bg_principal, fg="#7f8c8d")
         footer.pack(side=tk.BOTTOM, pady=10)
@@ -141,98 +136,17 @@ class MenuPrincipal:
         
         return btn
     
-    def verificar_api(self):
-        """Verificar estado de la API"""
-        try:
-            # URL CORRECTA: sin /api al final
-            response = requests.get("http://127.0.0.1:5000/ping", timeout=2)
-            if response.status_code == 200:
-                self.root.after(0, lambda: self.api_status.config(text="● API: Activa", fg="#27ae60"))
-                self.api_verificada = True
-                return True
-        except Exception as e:
-            print(f"[API Check] Error: {e}")
-            pass
-        
-        # API no responde - intentar iniciarla
-        self.root.after(0, lambda: self.api_status.config(text="● API: Inactiva - Iniciando...", fg="#e67e22"))
-        self.iniciar_api()
-        return False
-    
-    def _hilo_verificar_api(self):
-        """Hilo separado para verificar API sin bloquear UI"""
-        time.sleep(0.5)  # Esperar a que UI esté lista
-        
-        for intento in range(5):
-            if self.verificar_api():
-                return
-            time.sleep(1)  # Esperar 1 segundo entre intentos
-        
-        # Si después de 5 intentos no funciona, mostrar error
-        self.root.after(0, lambda: self.api_status.config(
-            text="● API: Error - No se pudo conectar", fg="#e74c3c"))
-    
-    def iniciar_api(self):
-        """Iniciar servidor API en hilo separado - SIN CREAR VENTANA EXTERNA"""
-        try:
-            # Iniciar API en hilo daemon (no crea proceso externo)
-            iniciar_api_en_hilo()
-            
-            # Verificar conexión en hilo separado
-            threading.Thread(target=self._esperar_y_verificar_api, daemon=True).start()
-            
-        except Exception as e:
-            self.root.after(0, lambda: self.api_status.config(
-                text="● API: Error", fg="#e74c3c"))
-    
-    def _esperar_y_verificar_api(self):
-        """Espera a que API esté lista y verifica"""
-        # Intentar 30 veces x 0.5s = 15 segundos máximo (más tiempo para iniciar)
-        for intento in range(30):
-            time.sleep(0.5)
-            try:
-                # Timeout corto para respuesta
-                response = requests.get("http://127.0.0.1:5000/ping", timeout=0.5)
-                if response.status_code == 200:
-                    self.root.after(0, lambda: self.api_status.config(
-                        text="● API: Activa", fg="#27ae60"))
-                    self.api_verificada = True
-                    return
-            except requests.exceptions.Timeout:
-                # Timeout - API aún cargando
-                pass
-            except requests.exceptions.ConnectionError:
-                # Puerto no escucha - API fallando
-                pass
-        
-        # Si no se conecta después de 15 segundos, mostrar error silenciosamente
-        self.root.after(0, lambda: self.api_status.config(
-            text="● API: No disponible", fg="#e74c3c"))
-    
     def abrir_censo(self):
         """Abrir sistema de censo"""
         # Verificar si ya hay un proceso de censo corriendo
         if self.proceso_censo is not None:
             # Verificar si el proceso sigue vivo
             if self.proceso_censo.poll() is None:
-                # El proceso sigue activo, intentar traer ventana al frente
-                try:
-                    # En Windows, intentar activar ventana por PID
-                    if sys.platform == 'win32':
-                        import win32gui
-                        import win32con
-                        
-                        # Buscar ventana por título
-                        hwnd = win32gui.FindWindow(None, "📋 Sistema de Censo de Habitantes - Comunidad San Pablo")
-                        if hwnd:
-                            win32gui.ShowWindow(hwnd, win32con.SW_SHOW)
-                            win32gui.SetForegroundWindow(hwnd)
-                            return
-                except:
-                    pass
-                
-                messagebox.showinfo("Información", 
-                                   "El sistema de Censo ya está abierto.\nVerifica la barra de tareas.")
+                # El proceso sigue activo, mostrar mensaje
+                messagebox.showinfo(
+                    "Censo Abierto",
+                    "El sistema de censo ya está abierto.\n\nBusca la ventana existente."
+                )
                 return
             else:
                 # El proceso terminó, permitir abrir uno nuevo
@@ -241,114 +155,84 @@ class MenuPrincipal:
         try:
             script_dir = os.path.dirname(os.path.abspath(__file__))
             censo_path = os.path.join(script_dir, "src", "modules", "censo", "censo_habitantes.py")
-            self.proceso_censo = subprocess.Popen(
-                [sys.executable, censo_path],
-                creationflags=subprocess.CREATE_NEW_CONSOLE if sys.platform == 'win32' else 0
-            )
+            
+            # En Windows, usar pythonw.exe para evitar ventana de consola
+            if sys.platform == 'win32':
+                pythonw_exe = sys.executable.replace("python.exe", "pythonw.exe")
+                if os.path.exists(pythonw_exe):
+                    self.proceso_censo = subprocess.Popen([pythonw_exe, censo_path])
+                else:
+                    CREATE_NO_WINDOW = 0x08000000
+                    self.proceso_censo = subprocess.Popen([sys.executable, censo_path], 
+                                                         creationflags=CREATE_NO_WINDOW)
+            else:
+                self.proceso_censo = subprocess.Popen([sys.executable, censo_path])
+            
+            self.procesos_externos.append(self.proceso_censo)
         except Exception as e:
             messagebox.showerror("Error", f"No se pudo abrir Censo:\n{str(e)}")
     
     def abrir_pagos(self):
-        """Abrir control de pagos con autenticación"""
-        # No bloquear UI mientras se carga
-        self.root.config(cursor="wait")
-        self.root.update()
-        
+        """Abrir control de pagos (con su propio login)"""
         try:
             script_dir = os.path.dirname(os.path.abspath(__file__))
-            os.chdir(script_dir)
-            from src.modules.pagos.control_pagos import main as control_main
+            pagos_path = os.path.join(script_dir, "src", "modules", "pagos", "control_pagos.py")
             
-            # Ejecutar en hilo para no bloquear
-            threading.Thread(
-                target=self._ejecutar_pagos,
-                args=(control_main,),
-                daemon=False
-            ).start()
-            
+            # Abrir en proceso separado para que tenga su propio login
+            if sys.platform == 'win32':
+                pythonw_exe = sys.executable.replace("python.exe", "pythonw.exe")
+                if os.path.exists(pythonw_exe):
+                    subprocess.Popen([pythonw_exe, pagos_path])
+                else:
+                    CREATE_NO_WINDOW = 0x08000000
+                    subprocess.Popen([sys.executable, pagos_path], creationflags=CREATE_NO_WINDOW)
+            else:
+                subprocess.Popen([sys.executable, pagos_path])
         except Exception as e:
-            self.root.config(cursor="arrow")
             messagebox.showerror("Error", f"No se pudo abrir Control de Pagos:\n{str(e)}")
     
-    def _ejecutar_pagos(self, control_main):
-        """Ejecutar control de pagos sin bloquear UI"""
-        try:
-            self.root.withdraw()  # Ocultar menú
-            control_main()
-            self.root.deiconify()  # Mostrar menú de nuevo
-        except Exception as e:
-            self.root.deiconify()
-            messagebox.showerror("Error", str(e))
-        finally:
-            self.root.config(cursor="arrow")
-    
     def abrir_faenas(self):
-        """Abrir registro de faenas con autenticación"""
-        self.root.config(cursor="wait")
-        self.root.update()
-        
+        """Abrir registro de faenas (con su propio login)"""
         try:
             script_dir = os.path.dirname(os.path.abspath(__file__))
-            os.chdir(script_dir)
-            from src.modules.faenas.control_faenas import main as faenas_main
+            faenas_path = os.path.join(script_dir, "src", "modules", "faenas", "control_faenas.py")
             
-            threading.Thread(
-                target=self._ejecutar_faenas,
-                args=(faenas_main,),
-                daemon=False
-            ).start()
-            
+            # Abrir en proceso separado para que tenga su propio login
+            if sys.platform == 'win32':
+                pythonw_exe = sys.executable.replace("python.exe", "pythonw.exe")
+                if os.path.exists(pythonw_exe):
+                    subprocess.Popen([pythonw_exe, faenas_path])
+                else:
+                    CREATE_NO_WINDOW = 0x08000000
+                    subprocess.Popen([sys.executable, faenas_path], creationflags=CREATE_NO_WINDOW)
+            else:
+                subprocess.Popen([sys.executable, faenas_path])
         except Exception as e:
-            self.root.config(cursor="arrow")
             messagebox.showerror("Error", f"No se pudo abrir Registro de Faenas:\n{str(e)}")
-    
-    def _ejecutar_faenas(self, faenas_main):
-        """Ejecutar faenas sin bloquear UI"""
-        try:
-            self.root.withdraw()
-            faenas_main()
-            self.root.deiconify()
-        except Exception as e:
-            self.root.deiconify()
-            messagebox.showerror("Error", str(e))
-        finally:
-            self.root.config(cursor="arrow")
     
     def abrir_admin_usuarios(self):
         """Abrir administración de usuarios"""
-        self.root.config(cursor="wait")
-        self.root.update()
-        
         try:
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            os.chdir(script_dir)
             from src.auth.ventana_admin_usuarios import VentanaAdminUsuarios
-            
             ventana = tk.Toplevel(self.root)
             app = VentanaAdminUsuarios(ventana)
-            
         except Exception as e:
             messagebox.showerror("Error", f"No se pudo abrir Administración de Usuarios:\n{str(e)}")
-        finally:
-            self.root.config(cursor="arrow")
     
     def salir(self):
-        """Cerrar aplicación"""
+        """Cerrar aplicación y todos los procesos hijos"""
         if messagebox.askyesno("Confirmar salida", "¿Desea salir del sistema?"):
-            # Matar API si está corriendo
-            if self.proceso_api is not None and self.proceso_api.poll() is None:
-                try:
-                    self.proceso_api.terminate()
-                    self.proceso_api.wait(timeout=2)
-                except:
-                    pass
-            
-            # Matar Census si está corriendo
-            if self.proceso_censo is not None and self.proceso_censo.poll() is None:
-                try:
-                    self.proceso_censo.terminate()
-                except:
-                    pass
+            # Terminar todos los procesos externos
+            for proceso in self.procesos_externos:
+                if proceso is not None and proceso.poll() is None:
+                    try:
+                        if sys.platform == 'win32':
+                            os.system(f"taskkill /F /PID {proceso.pid} 2>nul")
+                        else:
+                            proceso.terminate()
+                            proceso.wait(timeout=1)
+                    except:
+                        pass
             
             self.root.destroy()
             sys.exit(0)

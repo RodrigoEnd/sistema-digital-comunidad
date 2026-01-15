@@ -1,7 +1,7 @@
 {
   "version": "1.0",
-  "fecha_actualización": "2026-01-14T16:12:29.670053",
-  "total_eliminaciones": 3,
+  "fecha_actualización": "2026-01-15T10:10:58.763623",
+  "total_eliminaciones": 4,
   "eliminaciones": [
     {
       "fecha_eliminación": "2026-01-14T14:33:36.309220",
@@ -59,6 +59,26 @@
         "nombre": "Guillermo Nieto Valdes",
         "total_pagado": 0,
         "total_esperado": 100.0,
+        "número_pagos": 0,
+        "cooperación": "Desconocida"
+      }
+    },
+    {
+      "fecha_eliminación": "2026-01-15T10:10:58.763372",
+      "usuario_que_eliminó": "admin",
+      "motivo": "Eliminación por usuario",
+      "datos_persona": {
+        "nombre": "Virgencia De La Cruz Guzman",
+        "folio": "FOL-0015",
+        "monto_esperado": 300.0,
+        "pagos": [],
+        "notas": ""
+      },
+      "información_audit": {
+        "folio": "FOL-0015",
+        "nombre": "Virgencia De La Cruz Guzman",
+        "total_pagado": 0,
+        "total_esperado": 300.0,
         "número_pagos": 0,
         "cooperación": "Desconocida"
       }

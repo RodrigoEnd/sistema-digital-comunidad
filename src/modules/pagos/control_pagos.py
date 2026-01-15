@@ -3,7 +3,6 @@ from tkinter import ttk, messagebox, filedialog
 import json
 import os
 from datetime import datetime
-import requests
 import subprocess
 import sys
 import time
@@ -18,7 +17,7 @@ if __name__ == "__main__":
 
 from src.auth.seguridad import seguridad
 from src.core.logger import registrar_operacion, registrar_error, registrar_transaccion
-from src.config import TEMAS, TAMAÑOS_LETRA, API_URL, PASSWORD_CIFRADO, ARCHIVO_PAGOS, MODO_OFFLINE
+from src.config import TEMAS, TAMAÑOS_LETRA, PASSWORD_CIFRADO, ARCHIVO_PAGOS
 from src.core.validadores import validar_nombre, validar_monto, ErrorValidacion
 from src.tools.exportador import ExportadorExcel
 from src.tools.backups import GestorBackups
@@ -31,7 +30,7 @@ from src.ui.buscador import BuscadorAvanzado
 from src.modules.pagos.pagos_gestor_cooperaciones import GestorCooperaciones
 from src.modules.pagos.pagos_gestor_personas import GestorPersonas
 from src.modules.pagos.pagos_gestor_datos import GestorDatos
-from src.modules.pagos.pagos_gestor_api import GestorAPI
+from src.core.gestor_datos_global import obtener_gestor
 from src.modules.pagos.pagos_seguridad import GestorSeguridad
 from src.modules.pagos.pagos_dialogos import (
     DialogoRegistrarPago, 
@@ -78,14 +77,12 @@ class SistemaControlPagos:
         self.archivo_datos = ARCHIVO_PAGOS
         self.password_archivo = PASSWORD_CIFRADO
         self.password_hash = None
-        self.api_url = API_URL
         self.fila_animada = None
         self.guardado_pendiente = None
         self.usuario_actual = None
         self.gestor_auth = None
         self.tree_persona_map = {}
         self.permisos_rol = {}
-        self.api_caida_notificada = False
         self.barra_superior = None
         # BUGFIX: Inicializar variables UI temprano para evitar AttributeError
         self.monto_var = tk.DoubleVar(value=100.0)
@@ -110,7 +107,7 @@ class SistemaControlPagos:
             'cooperacion_activa': self.coop_activa_id
         })
         self.gestor_personas = GestorPersonas()
-        self.gestor_api = GestorAPI(API_URL)
+        self.gestor = obtener_gestor()  # Gestor centralizado
         self.gestor_seguridad = GestorSeguridad()
         self.gestor_historial = GestorHistorial(id_cooperacion='general')
         self.buscador = BuscadorAvanzado()
@@ -145,13 +142,8 @@ class SistemaControlPagos:
         # Variables para ordenamiento (MEJORA 4)
         self.columna_ordenamiento = None
         self.orden_ascendente = True
-        self.habilitar_ordenamiento_var = tk.BooleanVar(value=False)  # BUGFIX: Control de ordenamiento
+        self.habilitar_ordenamiento_var = tk.BooleanVar(value=False)
         
-        # BUGFIX: Inicializar API en background para no ralentizar apertura UI
-        self.api_activa = True  # Asumir que funciona por defecto
-        threading.Thread(target=self._inicializar_api_background, daemon=True).start()
-        
-        # Configurar backup automático al cerrar
         self.root.protocol("WM_DELETE_WINDOW", self.cerrar_aplicacion)
     
     def set_usuario(self, usuario, gestor_auth):
@@ -673,16 +665,10 @@ class SistemaControlPagos:
             return
         agregados = 0
         try:
-            response = requests.get(f"{self.api_url}/habitantes", timeout=6)
-            if response.status_code != 200:
-                if mostrar_mensaje:
-                    messagebox.showerror("Error", "No se pudo obtener habitantes desde el censo")
-                return
-            data = response.json()
-            habitantes = data.get('habitantes', [])
-            total_censo = data.get('total', len(habitantes))
+            # Obtener habitantes desde gestor centralizado
+            habitantes = self.gestor.obtener_habitantes(incluir_inactivos=True)
+            total_censo = len(habitantes)
             
-            # Verificar personas que están en cooperación pero NO en censo
             nombres_censo = {h.get('nombre', '').strip().lower() for h in habitantes}
             personas_no_en_censo = [p for p in coop.get('personas', []) 
                                    if p.get('nombre', '').strip().lower() not in nombres_censo]
@@ -709,34 +695,32 @@ class SistemaControlPagos:
             self.guardar_datos(mostrar_alerta=False)
             
             if mostrar_mensaje:
-                mensaje = f"📊 SINCRONIZACIÓN CON CENSO\n\n"
-                mensaje += f"• Habitantes en censo: {total_censo}\n"
-                mensaje += f"• Personas en cooperación: {len(self.personas)}\n"
-                mensaje += f"• Agregados desde censo: {agregados}\n"
+                mensaje = f"Sincronización con Censo\n\n"
+                mensaje += f"Habitantes en censo: {total_censo}\n"
+                mensaje += f"Personas en cooperacion: {len(self.personas)}\n"
+                mensaje += f"Agregados desde censo: {agregados}\n"
                 
                 if personas_no_en_censo:
-                    mensaje += f"\n⚠️ ADVERTENCIA:\n"
-                    mensaje += f"{len(personas_no_en_censo)} personas están en la cooperación pero NO en el censo:\n\n"
-                    for p in personas_no_en_censo[:5]:  # Mostrar solo las primeras 5
+                    mensaje += f"\nAdvertencia: {len(personas_no_en_censo)} personas en cooperacion no estan en el censo:\n\n"
+                    for p in personas_no_en_censo[:5]:
                         mensaje += f"  - {p.get('nombre', 'Sin nombre')}\n"
                     if len(personas_no_en_censo) > 5:
-                        mensaje += f"  ... y {len(personas_no_en_censo) - 5} más\n"
-                    mensaje += f"\n¿Deseas eliminar estas personas de la cooperación?"
+                        mensaje += f"  ... y {len(personas_no_en_censo) - 5} mas\n"
+                    mensaje += f"\nDeseas eliminar estas personas de la cooperacion?"
                     
-                    if messagebox.askyesno("Sincronización", mensaje):
-                        # Eliminar personas que no están en el censo
+                    if messagebox.askyesno("Sincronizacion", mensaje):
                         coop['personas'] = [p for p in coop['personas'] 
                                           if p.get('nombre', '').strip().lower() in nombres_censo]
                         self.personas = coop['personas']
                         self.actualizar_tabla()
                         self.actualizar_totales()
                         self.guardar_datos(mostrar_alerta=False)
-                        messagebox.showinfo("Éxito", f"Se eliminaron {len(personas_no_en_censo)} personas.\nTotal actual: {len(self.personas)}")
+                        messagebox.showinfo("Exito", f"Se eliminaron {len(personas_no_en_censo)} personas.\nTotal actual: {len(self.personas)}")
                 else:
                     if agregados > 0:
-                        messagebox.showinfo("Sincronización", mensaje + "\n✓ Sincronización completada correctamente")
+                        messagebox.showinfo("Sincronizacion", mensaje + "\nSincronizacion completada correctamente")
                     else:
-                        messagebox.showinfo("Sincronización", mensaje + "\n✓ Ya está sincronizado")
+                        messagebox.showinfo("Sincronizacion", mensaje + "\nYa esta sincronizado")
         except Exception as e:
             if mostrar_mensaje:
                 messagebox.showerror("Error", f"No se pudo sincronizar con el censo: {e}")
@@ -777,8 +761,9 @@ class SistemaControlPagos:
         if not messagebox.askyesno("Folios Duplicados Detectados", mensaje_duplicados):
             return
         
-        # Corregir
-        resultado = corregir_folios_duplicados(self.personas, self.api_url)
+        # Corregir usando gestor centralizado
+        gestor = obtener_gestor()
+        resultado = gestor.sincronizar_folios(self.personas)
         
         if resultado['exito']:
             # Guardar cambios inmediatamente
@@ -874,6 +859,7 @@ class SistemaControlPagos:
         canvas.configure(yscrollcommand=scrollbar.set)
 
         content_container = tk.Frame(canvas, bg=tema_visual['bg_principal'])
+        self.content_container = content_container  # Guardar referencia para toggle_fullscreen_tabla
         window_id = canvas.create_window((0, 0), window=content_container, anchor='nw')
 
         # Ajuste de scroll para ver toda la pantalla y mantener ancho completo
@@ -1058,7 +1044,7 @@ class SistemaControlPagos:
         self.search_box = SearchBox(controles_header, placeholder="Buscar por nombre, folio o estado...",
                         tema=tema_visual, callback=lambda _: self.buscar_tiempo_real())
         self.search_box.grid(row=0, column=0, sticky=(tk.W, tk.E), padx=(0, ESPACIADO['md']))
-        self.search_box.entry.bind('<KeyRelease>', lambda e: self.buscar_tiempo_real())
+        # NO agregar binding adicional - SearchBox ya tiene callback optimizado con debouncing
 
         btn_limpiar = BotonModerno(controles_header, f"{ICONOS['cerrar']} Limpiar", tema=tema_visual, tipo='secondary',
                  command=self.limpiar_busqueda)
@@ -1300,117 +1286,50 @@ class SistemaControlPagos:
         else:
             # Mostrar paneles nuevamente
             if hasattr(self, 'info_panel'):
-                self.info_panel.grid()
+                self.info_panel.grid(row=0, column=0, columnspan=2, sticky=(tk.W, tk.E))
             if hasattr(self, 'actions_panel'):
-                self.actions_panel.grid()
+                self.actions_panel.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E))
             if hasattr(self, 'barra_superior'):
                 self.barra_superior.frame.grid(row=0, column=0, sticky=(tk.W, tk.E))
         
     def sincronizar_con_censo(self, nombre):
         """Sincronizar persona con la base de datos de censo - buscar/crear folio permanente"""
-        if MODO_OFFLINE:
-            print("[CENSO] Modo offline - generando folio local")
-            return self.generar_folio_local()
-        
         try:
-            # PASO 1: Verificar que el nombre no sea duplicado en pagos
+            # Verificar si ya existe en pagos
             nombre_lower = nombre.lower().strip()
             for persona in self.personas:
                 if persona['nombre'].lower().strip() == nombre_lower:
-                    # Ya existe en pagos, retornar su folio
                     print(f"[CENSO] Persona ya existe en pagos: {nombre}")
                     return persona.get('folio')
             
-            # PASO 2: Buscar por nombre exacto en censo
-            try:
-                print(f"[CENSO] Buscando '{nombre}' en censo...")
-                response = requests.get(f"{self.api_url}/habitantes/nombre/{nombre}",
-                                        timeout=5)
-                if response.status_code == 200:
-                    data = response.json()
-                    if data.get('success') and data.get('habitante'):
-                        folio = data['habitante']['folio']
-                        print(f"[CENSO] ✓ Encontrado en censo - Folio: {folio}")
-                        # Verificar que el folio no esté duplicado en esta cooperación
-                        if not any(p.get('folio') == folio for p in self.personas):
-                            return folio
-                        else:
-                            print(f"[CENSO] ⚠ Folio {folio} ya existe en esta cooperación")
-                            return folio
-                else:
-                    print(f"[CENSO] No encontrado en censo (Status: {response.status_code})")
-            except Exception as e:
-                print(f"[CENSO] Error al buscar: {e}")
+            # Buscar en censo usando gestor
+            habitante = self.gestor.obtener_habitante_por_nombre(nombre)
+            if habitante:
+                folio = habitante['folio']
+                print(f"[CENSO] Encontrado en censo - Folio: {folio}")
+                return folio
             
-            # PASO 3: Si no existe, crear nuevo habitante en censo
-            try:
-                print(f"[CENSO] Agregando '{nombre}' al censo...")
-                response = requests.post(f"{self.api_url}/habitantes",
-                                        json={'nombre': nombre},
-                                        timeout=5)
+            # Si no existe, crear en censo
+            print(f"[CENSO] Agregando '{nombre}' al censo...")
+            habitante, mensaje = self.gestor.agregar_habitante(nombre)
+            
+            if habitante:
+                folio = habitante['folio']
+                print(f"[CENSO] Habitante agregado - Folio: {folio}")
+                return folio
+            else:
+                print(f"[CENSO] Error al agregar: {mensaje}")
+                return None
                 
-                print(f"[CENSO] Response status: {response.status_code}")
-                print(f"[CENSO] Response text: {response.text}")
-                
-                if response.status_code in [200, 201]:
-                    data = response.json()
-                    if data.get('success') and data.get('habitante'):
-                        folio = data['habitante']['folio']
-                        print(f"[CENSO] ✓✓ Habitante agregado exitosamente - Folio: {folio}")
-                        
-                        # Verificar que realmente se agregó
-                        import time
-                        time.sleep(0.5)  # Esperar un momento
-                        verify_response = requests.get(f"{self.api_url}/habitantes/folio/{folio}", timeout=3)
-                        if verify_response.status_code == 200:
-                            print(f"[CENSO] ✓ Verificado en censo")
-                        
-                        return folio
-                    else:
-                        print(f"[CENSO] ✗ Respuesta sin habitante: {data}")
-                else:
-                    print(f"[CENSO] ✗ Error al crear habitante: Status {response.status_code}")
-                    print(f"[CENSO] Respuesta: {response.text}")
-            except Exception as e:
-                print(f"[CENSO] ✗ Error al agregar al censo: {e}")
-                import traceback
-                traceback.print_exc()
-            
-            # Si todo falla, retornar None para que genere folio local
-            print("[CENSO] ⚠ Generando folio local por fallo en sincronización")
-            return None
-            
         except Exception as e:
-            print(f"[CENSO] ✗ Error general en sincronizar_con_censo: {e}")
+            print(f"[CENSO] Error en sincronizar_con_censo: {e}")
             import traceback
             traceback.print_exc()
             return None
 
-    def asegurar_api_activa(self):
-        """Delegado a GestorAPI"""
-        return self.gestor_api.asegurar_api_activa()
-
-    def _inicializar_api_background(self):
-        """BUGFIX: Inicializar API en background sin bloquear UI"""
-        try:
-            self.api_activa = self.asegurar_api_activa()
-            if self.api_activa:
-                self.iniciar_watchdog_api()
-        except Exception as e:
-            self.api_activa = False
-            print(f"[API_BACKGROUND] Error: {e}")
-
-    def verificar_api(self):
-        """Delegado a GestorAPI"""
-        return self.gestor_api.verificar_api()
-
-    def iniciar_watchdog_api(self):
-        """Delegado a GestorAPI"""
-        return self.gestor_api.iniciar_watchdog_api()
-
     def generar_folio_local(self):
-        """Delegado a GestorAPI"""
-        return self.gestor_api.generar_folio_local()
+        """Usar folio del gestor centralizado"""
+        return self.gestor.obtener_siguiente_folio()
     
     def actualizar_monto(self):
         """Actualiza el monto de cooperación con confirmación mejorada"""
@@ -1735,13 +1654,20 @@ class SistemaControlPagos:
         DialogoVerHistorial.mostrar(self.root, persona)
     
     def buscar_tiempo_real(self):
-        """MEJORA 3: Búsqueda en tiempo real CON DEBOUNCE (180ms)"""
-        # Cancelar búsqueda anterior si existe
-        if hasattr(self, '_timer_busqueda') and self._timer_busqueda:
-            self.root.after_cancel(self._timer_busqueda)
+        """Búsqueda en tiempo real optimizada con debounce de 500ms"""
+        from src.core.optimizador_ui import get_ui_optimizer
+        from src.config import UI_DEBOUNCE_SEARCH
         
-        # Programar nueva búsqueda con debounce de 180ms
-        self._timer_busqueda = self.root.after(180, self._ejecutar_busqueda)
+        # Obtener optimizador (solo una vez)
+        if not hasattr(self, '_optimizer'):
+            self._optimizer = get_ui_optimizer()
+        
+        # Usar debouncing - cancela búsquedas anteriores automáticamente
+        self._optimizer.debounce.debounce(
+            f"pagos_search_{id(self)}",
+            UI_DEBOUNCE_SEARCH,
+            self._ejecutar_busqueda
+        )
     
     def _ejecutar_busqueda(self):
         """Ejecuta la búsqueda real después del debounce"""
@@ -1785,18 +1711,24 @@ class SistemaControlPagos:
         if seleccion_anterior:
             persona_seleccionada = self.tree_persona_map.get(seleccion_anterior[0])
         
+        # Deshabilitar redibujado temporal para mejor rendimiento
+        self.tree.configure(takefocus=False)
+        
         for item in self.tree.get_children():
             self.tree.delete(item)
         self.tree_persona_map = {}
         
-        # Filtrar personas si hay búsqueda activa
-        personas_mostrar = self.personas
+        # Filtrar personas si hay búsqueda activa (optimizado)
         criterio = self.search_box.get().strip().lower() if hasattr(self, 'search_box') else ''
         
         if criterio:
-            personas_mostrar = [p for p in self.personas 
-                               if criterio in p.get('nombre', 'SIN-NOMBRE').lower() or 
-                               criterio in p.get('folio', 'SIN-FOLIO').lower()]
+            personas_mostrar = [
+                p for p in self.personas 
+                if criterio in p.get('nombre', 'SIN-NOMBRE').lower() or 
+                   criterio in p.get('folio', 'SIN-FOLIO').lower()
+            ]
+        else:
+            personas_mostrar = self.personas
         
         # Agregar personas
         for idx, persona in enumerate(personas_mostrar):
@@ -1821,15 +1753,6 @@ class SistemaControlPagos:
             estado = datos_estado['nombre']
             indicador = datos_estado['emoji'] + ' '
             
-            # Mapear estado a tag de color
-            tag_estado_map = {
-                'completado': 'pagado',
-                'excedente': 'pagado',
-                'parcial': 'parcial',
-                'pendiente': 'pendiente'
-            }
-            tag = tag_estado_map.get(estado_clave, 'pendiente')
-            
             # Obtener fecha del último pago
             ultimo_pago = ''
             if persona['pagos']:
@@ -1837,23 +1760,26 @@ class SistemaControlPagos:
                 ultimo_pago = f"{ultimo['fecha']} {ultimo['hora']}"
             
             iid = self._persona_iid(persona)
-            # El orden de los tags importa: los últimos tienen prioridad
             row_tag = 'fila_par' if idx % 2 == 0 else 'fila_impar'
+            
             self.tree.insert('', tk.END, iid=iid,
                            values=(persona.get('folio', 'SIN-FOLIO'),
-                                  indicador + persona['nombre'],  # Agregar indicador al nombre
+                                  indicador + persona['nombre'],
                                   f"${monto_esperado:.2f}",
                                   f"${total_pagado:.2f}",
                                   f"${pendiente:.2f}",
                                   estado,
                                   ultimo_pago,
                                   persona.get('notas', '')),
-                           tags=(row_tag,))  # Solo tag de fila, sin tag de color
+                           tags=(row_tag,))
             self.tree_persona_map[iid] = persona
             
             # BUG FIX #6: Restaurar selección si era la misma persona
             if persona_seleccionada and persona == persona_seleccionada:
                 self.tree.selection_set(iid)
+        
+        # Reactivar redibujado
+        self.tree.configure(takefocus=True)
         
         # Actualizar contador de personas
         total_mostradas = len(personas_mostrar)
@@ -1862,7 +1788,7 @@ class SistemaControlPagos:
             self.total_personas_label.config(text=str(total_general))
         else:
             self.total_personas_label.config(text=f"{total_mostradas} de {total_general}")
-
+    
     def _mostrar_menu_persona(self, event):
         """Mostrar menú contextual sobre la fila seleccionada"""
         iid = self.tree.identify_row(event.y)

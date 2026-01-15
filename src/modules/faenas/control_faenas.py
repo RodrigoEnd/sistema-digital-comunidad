@@ -22,12 +22,13 @@ from src.modules.historial.historial import GestorHistorial
 from src.modules.faenas.faenas_servicio import FaenasServicio
 from src.modules.faenas.faenas_repo import FaenasRepositorio
 from src.modules.faenas.faenas_ui_manager import FaenasUIManager
+from src.core.gestor_datos_global import obtener_gestor
 from src.modules.faenas.dialogos_faenas import (
     DialogoAgregarParticipantes,
     DialogoRegistroPagoEnLugar
 )
 from src.config import (
-    API_URL, PASSWORD_CIFRADO, ARCHIVO_FAENAS, MODO_OFFLINE,
+    PASSWORD_CIFRADO, ARCHIVO_FAENAS,
     DIAS_LIMITE_EDICION_FAENA, PESO_FAENA_MINIMO, PESO_FAENA_MAXIMO,
     PESO_SUSTITUCION_HABITANTE, PESO_SUSTITUCION_EXTERNO,
     PESO_TRABAJADOR_CONTRATADO
@@ -57,7 +58,8 @@ class SistemaFaenas:
 
         self.gestor_historial = GestorHistorial(id_cooperacion='faenas')
         self.repo = FaenasRepositorio(ARCHIVO_FAENAS, PASSWORD_CIFRADO)
-        self.servicio = FaenasServicio(api_url=API_URL)
+        self.servicio = FaenasServicio()  # Sin API, usa gestor interno
+        self.gestor = obtener_gestor()  # Gestor centralizado
 
         # Cargar datos iniciales
         self.cargar_datos()
@@ -115,20 +117,14 @@ class SistemaFaenas:
             messagebox.showinfo("Listo", "Faenas guardadas")
 
     def _refrescar_habitantes(self) -> None:
-        """Carga habitantes desde API o base local para sugerencias"""
-        resultado = self.servicio.sincronizar_participantes_con_censo(self.faenas)
-        if resultado.get('ok'):
-            self.habitantes_cache = resultado.get('habitantes_cache', [])
-            actualizados = resultado.get('actualizados', 0)
-            if actualizados > 0:
-                self.guardar_datos(mostrar_alerta=False)
-        else:
-            # Fallback local
-            if db:
-                try:
-                    self.habitantes_cache = db.obtener_todos()
-                except Exception:
-                    self.habitantes_cache = []
+        """Carga habitantes desde gestor centralizado para sugerencias"""
+        try:
+            self.habitantes_cache = self.gestor.obtener_habitantes(incluir_inactivos=True)
+            if not self.habitantes_cache:
+                self.habitantes_cache = []
+        except Exception as e:
+            registrar_error('control_faenas', '_refrescar_habitantes', str(e))
+            self.habitantes_cache = []
 
     def _normalizar_faena(self, faena: Dict) -> None:
         """Asegura campos nuevos para faenas ya guardadas"""

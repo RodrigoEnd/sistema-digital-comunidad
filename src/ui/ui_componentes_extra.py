@@ -7,6 +7,8 @@ import tkinter as tk
 from tkinter import ttk
 from src.ui.tema_moderno import (TEMA_CLARO, TEMA_OSCURO, FUENTES, FUENTES_DISPLAY,
                           ESPACIADO, ICONOS, oscurecer_color, aclarar_color)
+from src.core.optimizador_ui import get_ui_optimizer
+from src.config import UI_DEBOUNCE_SEARCH
 
 
 class Badge(tk.Label):
@@ -115,14 +117,17 @@ class AlertBox(tk.Frame):
 
 
 class SearchBox(tk.Frame):
-    """Campo de búsqueda moderno con icono"""
+    """Campo de búsqueda moderno con icono y optimización automática"""
     
-    def __init__(self, parent, placeholder="Buscar...", tema=None, callback=None):
+    def __init__(self, parent, placeholder="Buscar...", tema=None, callback=None, debounce_ms=None):
         super().__init__(parent)
         self.tema = tema or TEMA_CLARO
         self.callback = callback
         self.placeholder = placeholder
         self.has_placeholder = True
+        self.debounce_ms = debounce_ms or UI_DEBOUNCE_SEARCH
+        self._optimizer = get_ui_optimizer()
+        self._widget_id = f"search_{id(self)}"
         
         card_bg = self.tema.get('card_bg', self.tema['bg_secundario'])
         self.config(bg=card_bg, relief=tk.FLAT, bd=1,
@@ -176,9 +181,15 @@ class SearchBox(tk.Frame):
         self.config(highlightbackground=self.tema['border'], highlightthickness=1)
     
     def _on_key_release(self, event):
-        """Evento tecla liberada"""
+        """Evento tecla liberada con debouncing automático"""
         if self.callback and not self.has_placeholder:
-            self.callback(self.get())
+            # Usar optimizador para debouncing automático
+            self._optimizer.debounce_search(
+                self._widget_id,
+                self.debounce_ms,
+                self.callback,
+                self.get()
+            )
     
     def get(self):
         """Obtener valor"""

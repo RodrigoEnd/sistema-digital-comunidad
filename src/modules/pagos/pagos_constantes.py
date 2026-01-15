@@ -4,15 +4,12 @@ Organiza todos los valores de configuración reutilizables
 """
 
 import tkinter as tk
-from src.config import TEMAS, TAMAÑOS_LETRA, API_URL, PASSWORD_CIFRADO, ARCHIVO_PAGOS, MODO_OFFLINE
+from src.config import TEMAS, TAMAÑOS_LETRA, PASSWORD_CIFRADO, ARCHIVO_PAGOS
 from src.ui.tema_moderno import FUENTES, FUENTES_DISPLAY, ESPACIADO, ICONOS
 
-# ===== CONFIGURACIÓN DE DATOS =====
 CONFIG_DATOS = {
     'archivo_pagos': ARCHIVO_PAGOS,
     'password_archivo': PASSWORD_CIFRADO,
-    'api_url': API_URL,
-    'modo_offline': MODO_OFFLINE,
 }
 
 # ===== CONFIGURACIÓN INICIAL =====

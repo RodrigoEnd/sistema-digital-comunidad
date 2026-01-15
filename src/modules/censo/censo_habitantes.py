@@ -1,27 +1,30 @@
 """
 Sistema de Censo de Habitantes - Módulo Principal Modularizado
 Versión refactorizada con responsabilidades separadas
+Optimizado para manejar grandes volúmenes de datos (2000+ habitantes)
 """
 
 import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog
-import requests
 import subprocess
 import sys
 import time
 import os
 from datetime import datetime
 import threading
+import queue
 
 # Configurar path para imports cuando se ejecuta directamente
 proyecto_raiz = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 if proyecto_raiz not in sys.path:
     sys.path.insert(0, proyecto_raiz)
 
-from src.config import API_URL, TEMAS, CENSO_DEBOUNCE_MS, CENSO_COLUMNAS, CENSO_COLUMNAS_ANCHOS, CENSO_NOTA_MAX_DISPLAY
+from src.config import TEMAS, CENSO_DEBOUNCE_MS, CENSO_COLUMNAS, CENSO_COLUMNAS_ANCHOS, CENSO_NOTA_MAX_DISPLAY, UI_DEBOUNCE_SEARCH
 from src.ui.estilos_globales import TEMA_GLOBAL
 from src.ui.tema_moderno import FUENTES
 from src.core.logger import registrar_operacion, registrar_error
+from src.core.optimizador_ui import get_ui_optimizer
+from src.core.gestor_datos_global import obtener_gestor
 from src.modules.indicadores.indicadores_estado import calcular_estado_habitante
 
 # Imports de módulos internos del censo
@@ -31,6 +34,7 @@ from src.modules.censo.censo_operaciones import aplicar_filtros, ordenar_columna
 from src.modules.censo.censo_exportacion import exportar_excel
 from src.modules.censo.censo_preferencias import cargar_preferencias, guardar_preferencias, aplicar_preferencias
 from src.modules.censo.censo_tooltips import configurar_tooltips, mostrar_tooltip_indicador, ocultar_tooltip_indicador
+from src.modules.censo.censo_optimizaciones import cargar_habitantes_async, actualizar_tabla_incremental
 
 
 class SistemaCensoHabitantes:
@@ -38,8 +42,30 @@ class SistemaCensoHabitantes:
         self.root = root
         self.root.title("📋 Sistema de Censo de Habitantes - Comunidad San Pablo")
         
-        # No usar 'zoomed' - puede causar problemas de visibilidad
-        # Usar tamaño estándar en su lugar
+        # Optimizaciones de rendimiento para la ventana
+        self.root.resizable(True, True)
+        
+        # Configurar para mejor rendimiento
+        try:
+            # Habilitar aceleración por hardware en Windows
+            self.root.wm_attributes('-alpha', 1.0)
+            
+            # Configurar prioridad de proceso (Windows)
+            if sys.platform == 'win32':
+                import ctypes
+                import psutil
+                
+                # Obtener proceso actual
+                process = psutil.Process()
+                
+                # Establecer prioridad alta (sin llegar a realtime que puede causar problemas)
+                process.nice(psutil.HIGH_PRIORITY_CLASS)
+                
+                print("[Censo] Prioridad de proceso establecida a ALTA")
+        except Exception as e:
+            print(f"[Censo] No se pudo optimizar prioridad: {e}")
+        
+        # Tamaño y posición optimizados
         self.root.geometry("1400x800")
         
         # Centrar ventana en pantalla
@@ -50,12 +76,26 @@ class SistemaCensoHabitantes:
         
         self.style = ttk.Style()
         
-        self.api_url = API_URL
+        # Usar gestor en vez de API
+        self.gestor = obtener_gestor()
         self.habitantes = []
+        self.habitantes_filtrados = []  # Cache de resultados filtrados
         self.nombre_visible = tk.BooleanVar(value=True)
         self.folio_visible = tk.BooleanVar(value=True)
         self.filtro_estado = tk.StringVar(value="Todos")
         self._search_job = None
+        
+        # Sistema de optimización UI
+        self._optimizer = get_ui_optimizer()
+        self._search_cache = {}
+        self._last_search_key = None
+        
+        # Control de threading y operaciones asíncronas
+        self._carga_en_progreso = False
+        self._actualizacion_en_progreso = False
+        self._cancelar_busqueda = False
+        self._cola_tareas = queue.Queue()
+        self._thread_worker = None
         
         # Variables para ordenamiento
         self.columna_orden = None
@@ -72,15 +112,12 @@ class SistemaCensoHabitantes:
         # Tooltip para indicadores
         self.tooltip_label = None
         
-        # Flag para controlar inicialización
-        self._api_verificada = False
-        self._inicializacion_completa = False
-        
         self.configurar_estilos()
         self.configurar_interfaz()
         
-        # Iniciar carga de API y datos de forma asíncrona
-        self._inicializar_async()
+        self.root.protocol("WM_DELETE_WINDOW", self.cerrar_con_cleanup)
+        
+        self._inicializar_datos()
 
     def obtener_colores(self):
         return TEMA_GLOBAL
@@ -88,62 +125,52 @@ class SistemaCensoHabitantes:
     def configurar_estilos(self):
         colores = self.obtener_colores()
         self.style.theme_use('clam')
+        
+        # Configurar estilos de forma optimizada
         self.style.configure('TFrame', background=colores['bg_principal'])
         self.style.configure('TLabel', background=colores['bg_principal'], foreground=colores['fg_principal'])
         self.style.configure('TButton', background=colores['bg_secundario'], foreground=colores['fg_principal'], padding=6, borderwidth=1)
         self.style.map('TButton', background=[('active', colores['button_hover'])])
         self.style.configure('TEntry', fieldbackground=colores['input_bg'], borderwidth=1)
-        self.style.configure('Treeview', background=colores['table_row_even'], fieldbackground=colores['table_row_even'], foreground=colores['fg_principal'], borderwidth=0)
-        self.style.map('Treeview', background=[('selected', colores['table_selected'])], foreground=[('selected', colores['fg_principal'])])
-        self.style.configure('Treeview.Heading', background=colores['table_header'], foreground=colores['table_header_text'], padding=6)
+        
+        # Optimizar configuración de Treeview para mejor rendimiento
+        self.style.configure('Treeview', 
+                           background=colores['table_row_even'], 
+                           fieldbackground=colores['table_row_even'], 
+                           foreground=colores['fg_principal'], 
+                           borderwidth=0,
+                           rowheight=25)  # Altura fija para mejor rendimiento
+        self.style.map('Treeview', 
+                      background=[('selected', colores['table_selected'])], 
+                      foreground=[('selected', colores['fg_principal'])])
+        self.style.configure('Treeview.Heading', 
+                           background=colores['table_header'], 
+                           foreground=colores['table_header_text'], 
+                           padding=6)
 
-    def _inicializar_async(self):
-        """Inicializa API y carga datos de forma asíncrona sin bloquear UI"""
-        # Iniciar API en hilo separado
-        hilo = threading.Thread(target=self._hilo_inicializacion, daemon=True)
-        hilo.start()
-    
-    def _hilo_inicializacion(self):
-        """Hilo para cargar datos sin bloquear UI. API debe estar iniciada desde menú principal"""
+    def _inicializar_datos(self):
+        """Inicializa datos directamente desde gestor (optimizado)"""
         try:
-            # Verificar si API está disponible (se inicia desde menú principal)
-            for i in range(20):  # máx 5 segundos esperando API
-                if self.verificar_api():
-                    print("API disponible")
-                    self._api_verificada = True
-                    break
-                time.sleep(0.25)
+            print("[Censo] Cargando habitantes desde gestor...")
             
-            if not self._api_verificada:
-                print("Advertencia: API no disponible. Operando en modo limitado.")
+            # Cargar en segundo plano para no bloquear UI
+            self.root.after(100, self._cargar_datos_asincrono)
             
-            # Cargar datos
+        except Exception as e:
+            print(f"[Censo] Error en inicialización: {e}")
+            messagebox.showerror("Error", f"Error durante inicialización: {str(e)}")
+    
+    def _cargar_datos_asincrono(self):
+        """Carga datos sin bloquear la interfaz"""
+        try:
             self.cargar_habitantes()
             
             # Cargar preferencias
             self._cargar_y_aplicar_preferencias()
             
-            self._inicializacion_completa = True
-            
+            print("[Censo] ✓ Inicialización completa")
         except Exception as e:
-            print(f"Error en inicialización: {e}")
-            self.root.after(0, lambda: messagebox.showerror("Error", 
-                f"Error durante inicialización: {str(e)}"))
-    
-    # NOTA: API se inicia desde menu_principal.py, no desde este módulo
-    # Mantener estos métodos comentados para referencia
-    
-    def _iniciar_api(self):
-        """DEPRECATED: API se inicia desde menu_principal.py"""
-        pass
-    
-    def verificar_api(self):
-        """Verificar que la API está funcionando"""
-        try:
-            response = requests.get(f"{self.api_url}/ping", timeout=2)
-            return response.status_code == 200
-        except:
-            return False
+            print(f"[Censo] Error cargando datos: {e}")
     
     def configurar_interfaz(self):
         """Configura la interfaz gráfica principal"""
@@ -174,7 +201,7 @@ class SistemaCensoHabitantes:
         
         self.panel_detalles = CensoPanelDetalles(
             panel_frame,
-            self.api_url,
+            self.gestor,
             self.cargar_habitantes,
             self.abrir_control_pagos,
             self.abrir_registro_faenas,
@@ -247,12 +274,13 @@ class SistemaCensoHabitantes:
         toolbar.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=(0, 8))
         toolbar.columnconfigure(1, weight=1)
 
-        # Búsqueda
+        # Búsqueda con debouncing optimizado
         ttk.Label(toolbar, text="Buscar por nombre o folio:").grid(row=0, column=0, sticky=tk.W, padx=(0,5))
         self.search_var = tk.StringVar()
-        self.search_var.trace('w', lambda *args: self._buscar_tiempo_real())
         search_entry = ttk.Entry(toolbar, textvariable=self.search_var, width=35)
         search_entry.grid(row=0, column=1, sticky=(tk.W, tk.E), padx=(0, 10))
+        # Binding optimizado con KeyRelease solo (sin trace que se ejecuta demasiado)
+        search_entry.bind('<KeyRelease>', lambda e: self._buscar_tiempo_real())
 
         # Filtro de estado
         ttk.Label(toolbar, text="Filtrar:").grid(row=0, column=2, sticky=tk.W, padx=(10,5))
@@ -284,12 +312,13 @@ class SistemaCensoHabitantes:
         scrollbar_y = ttk.Scrollbar(table_frame, orient=tk.VERTICAL)
         scrollbar_x = ttk.Scrollbar(table_frame, orient=tk.HORIZONTAL)
         
-        # Treeview
+        # Treeview (optimizado: sin columna de icono)
         self.tree = ttk.Treeview(table_frame, 
                                  columns=CENSO_COLUMNAS,
-                                 show='headings',
+                                 show='headings',  # Solo encabezados, sin columna de ícono
                                  yscrollcommand=scrollbar_y.set,
-                                 xscrollcommand=scrollbar_x.set)
+                                 xscrollcommand=scrollbar_x.set,
+                                 selectmode='browse')  # Modo de selección optimizado
         
         # Configurar encabezados
         self.tree.heading('folio', text='Folio', command=lambda: self._ordenar_columna('folio'))
@@ -362,51 +391,12 @@ class SistemaCensoHabitantes:
         return False
 
     def cargar_habitantes(self):
-        """Cargar todos los habitantes desde la API"""
-        try:
-            response = requests.get(f"{self.api_url}/habitantes", timeout=5)
-            if response.status_code == 200:
-                data = response.json()
-                self.habitantes = data['habitantes']
-                # Actualizar UI de forma segura desde threads
-                self.root.after(0, self._actualizar_tabla, self.habitantes)
-            else:
-                self.root.after(0, lambda: messagebox.showerror("Error", "No se pudieron cargar los habitantes"))
-        except Exception as e:
-            print(f"Error cargando habitantes: {e}")
-            self.root.after(0, lambda: messagebox.showerror("Error", f"Error de conexión: {str(e)}"))
+        """Cargar todos los habitantes desde el gestor (optimizado)"""
+        cargar_habitantes_async(self)
     
     def _actualizar_tabla(self, habitantes):
-        """Actualizar tabla con lista de habitantes"""
-        try:
-            # Protección: verificar que self.tree existe
-            if not hasattr(self, 'tree'):
-                print("Tabla aún no ha sido creada")
-                return
-            
-            for item in self.tree.get_children():
-                self.tree.delete(item)
-            
-            for hab in habitantes:
-                activo = hab.get('activo', True)
-                estado_icono = "● Activo" if activo else "● Inactivo"
-                tag = 'activo' if activo else 'inactivo'
-                nota = hab.get('nota', '')
-                
-                self.tree.insert('', tk.END,
-                               values=(hab['folio'],
-                                      hab['nombre'],
-                                      hab.get('fecha_registro', ''),
-                                      estado_icono,
-                                      nota[:CENSO_NOTA_MAX_DISPLAY] + '...' if len(nota) > CENSO_NOTA_MAX_DISPLAY else nota),
-                               tags=(tag,))
-            
-            if hasattr(self, 'total_label'):
-                self.total_label.config(text=f"Total Habitantes: {len(habitantes)}")
-            self._actualizar_indicadores_estado()
-            self._actualizar_barra_estado()
-        except Exception as e:
-            print(f"Error actualizando tabla: {e}")
+        """Actualizar tabla con lista de habitantes (optimizado)"""
+        actualizar_tabla_incremental(self, habitantes)
     
     def _actualizar_barra_estado(self):
         """Actualiza la barra de estado inferior"""
@@ -429,29 +419,130 @@ class SistemaCensoHabitantes:
     # ===== MÉTODOS DE FILTRADO Y BÚSQUEDA =====
     
     def _buscar_tiempo_real(self):
-        """Búsqueda en tiempo real con debounce"""
-        if self._search_job:
-            self.root.after_cancel(self._search_job)
-            self._search_job = None
-        
-        self._search_job = self.root.after(CENSO_DEBOUNCE_MS, self._aplicar_filtros)
-    
-    def _aplicar_filtros(self):
-        """Aplica filtros de búsqueda y estado"""
+        """Búsqueda en tiempo real optimizada con debounce y caché"""
+        # Usar el optimizador global
         criterio = self.search_var.get().strip().lower()
         filtro = self.filtro_estado.get()
         
-        resultados = aplicar_filtros(self.habitantes, criterio, filtro)
-        self._actualizar_tabla(resultados)
+        # Generar clave de búsqueda
+        search_key = f"{criterio}_{filtro}"
         
-        # Guardar preferencias
-        guardar_preferencias(self.config_usuario_path, self.search_var.get(), filtro)
+        # Si es la misma búsqueda, no hacer nada
+        if search_key == self._last_search_key:
+            return
+        
+        self._last_search_key = search_key
+        
+        # Cancelar búsquedas anteriores
+        self._optimizer.debounce.cancel(f"censo_search_{id(self)}")
+        
+        # Programar nueva búsqueda con debounce
+        self._optimizer.debounce.debounce(
+            f"censo_search_{id(self)}",
+            UI_DEBOUNCE_SEARCH,
+            self._ejecutar_busqueda_async,
+            criterio,
+            filtro
+        )
     
+    def _ejecutar_busqueda_async(self, criterio: str, filtro: str):
+        """Ejecutar búsqueda de forma asíncrona"""
+        # Verificar caché primero
+        cache_key = f"{criterio}_{filtro}"
+        
+        if cache_key in self._search_cache:
+            # Usar resultado en caché
+            self.root.after(0, lambda: self._finalizar_filtrado(
+                self._search_cache[cache_key], criterio, filtro
+            ))
+            return
+        
+        # Ejecutar filtrado en background
+        def _filtrar_task():
+            try:
+                if not criterio and filtro == 'Todos':
+                    return self.habitantes.copy()
+                else:
+                    return aplicar_filtros(self.habitantes, criterio, filtro)
+            except Exception as e:
+                print(f"Error filtrando: {e}")
+                return []
+        
+        def _on_complete(resultados):
+            # Guardar en caché (limitar tamaño)
+            if len(self._search_cache) > 50:
+                # Eliminar entradas antiguas
+                self._search_cache.clear()
+            
+            self._search_cache[cache_key] = resultados
+            self._finalizar_filtrado(resultados, criterio, filtro)
+        
+        # Ejecutar en background
+        self._optimizer.async_update(
+            f"censo_filter_{id(self)}",
+            _filtrar_task,
+            _on_complete
+        )
+    
+    def _aplicar_filtros_async(self):
+        """Aplica filtros de forma asíncrona para no bloquear UI"""
+        if hasattr(self, '_actualizacion_en_progreso') and self._actualizacion_en_progreso:
+            # Ya hay una actualización, programar para después
+            self._search_job = self.root.after(50, self._aplicar_filtros_async)
+            return
+        
+        self._search_job = None
+        self._cancelar_busqueda = False
+        self._actualizacion_en_progreso = True
+        
+        criterio = self.search_var.get().strip().lower()
+        filtro = self.filtro_estado.get()
+        
+        def _filtrar_thread():
+            try:
+                # Filtrar en background
+                if not criterio and filtro == 'Todos':
+                    resultados = self.habitantes.copy()
+                else:
+                    resultados = aplicar_filtros(self.habitantes, criterio, filtro)
+                
+                # Si fue cancelada, no actualizar
+                if not self._cancelar_busqueda:
+                    self.root.after(0, lambda: self._finalizar_filtrado(resultados, criterio, filtro))
+                else:
+                    self._actualizacion_en_progreso = False
+                    
+            except Exception as e:
+                print(f"Error filtrando: {e}")
+                self._actualizacion_en_progreso = False
+        
+        # Ejecutar filtrado en thread
+        thread = threading.Thread(target=_filtrar_thread, daemon=True)
+        thread.start()
+    
+    def _finalizar_filtrado(self, resultados, criterio, filtro):
+        """Finaliza el filtrado actualizando la UI"""
+        try:
+            if hasattr(self, 'habitantes_filtrados'):
+                self.habitantes_filtrados = resultados
+            self._actualizar_tabla(resultados)
+            # NO guardar preferencias automáticamente - solo al cerrar ventana si el usuario lo desea
+        finally:
+            self._actualizacion_en_progreso = False
+    
+    def _aplicar_filtros(self):
+        """Wrapper para compatibilidad"""
+        self._aplicar_filtros_async()
     def _limpiar_busqueda(self):
         """Limpiar campo de busqueda y filtros"""
         self.search_var.set('')
         self.filtro_estado.set('Todos')
         self._actualizar_tabla(self.habitantes)
+        # Limpiar preferencias guardadas
+        try:
+            guardar_preferencias(self.config_usuario_path, '', 'Todos')
+        except:
+            pass
     
     def _ordenar_columna(self, columna):
         """Ordena la tabla por la columna especificada"""
@@ -495,7 +586,7 @@ class SistemaCensoHabitantes:
     
     def _agregar_habitante(self):
         """Abre diálogo para agregar habitante"""
-        agregar_habitante(self.root, self.api_url, self.habitantes, self.cargar_habitantes)
+        agregar_habitante(self.root, self.habitantes, self.cargar_habitantes)
     
     def _mostrar_estadisticas(self):
         """Muestra ventana de estadísticas"""
@@ -523,7 +614,7 @@ class SistemaCensoHabitantes:
     
     def _editar_nota_seleccionada(self, habitante):
         """Edita la nota del habitante seleccionado"""
-        dialogo_editar_nota(self.root, habitante, self.api_url, self.cargar_habitantes)
+        dialogo_editar_nota(self.root, habitante, self.gestor, self.cargar_habitantes)
     
     def _cambiar_estado_seleccionado(self, folio, activo):
         """Cambia el estado del habitante"""
@@ -540,7 +631,7 @@ class SistemaCensoHabitantes:
             if not respuesta:
                 return
         
-        actualizar_estado_habitante(folio, activo, self.api_url, self.cargar_habitantes)
+        actualizar_estado_habitante(folio, activo, self.gestor, self.cargar_habitantes)
     
     # ===== MÉTODOS DE MENÚ CONTEXTUAL =====
     
@@ -571,7 +662,7 @@ class SistemaCensoHabitantes:
         if nota is None:
             return
         
-        colocar_nota_habitante(folio, nota, self.api_url, self.cargar_habitantes)
+        colocar_nota_habitante(folio, nota, self.gestor, self.cargar_habitantes)
     
     def _eliminar_habitante_seleccion(self):
         """Elimina el habitante seleccionado con confirmación"""
@@ -594,21 +685,17 @@ class SistemaCensoHabitantes:
                                   f"¿Desea eliminar a {nombre} (Folio: {folio})?\n\nEsta acción NO se puede deshacer."):
             return
         
-        # Ejecutar eliminación via API
+        # Ejecutar eliminación via gestor
         try:
-            response = requests.delete(f"{self.api_url}/habitantes/{folio}", timeout=5)
-            if response.status_code == 200:
-                data = response.json()
-                if data.get('success'):
-                    messagebox.showinfo("Éxito", f"Habitante {nombre} eliminado correctamente")
-                    self.cargar_habitantes()
-                else:
-                    messagebox.showerror("Error", data.get('message', 'Error al eliminar'))
+            exito, mensaje = self.gestor.eliminar_habitante(folio)
+            if exito:
+                messagebox.showinfo("Éxito", f"Habitante {nombre} eliminado correctamente")
+                self.cargar_habitantes()
             else:
-                messagebox.showerror("Error", f"Error del servidor: {response.status_code}")
+                messagebox.showerror("Error", mensaje)
         except Exception as e:
-            messagebox.showerror("Error", f"No se pudo conectar con la API: {str(e)}")
-            registrar_error('censo_habitantes', '_eliminar_habitante_seleccion', str(e))
+            messagebox.showerror("Error", f"No se pudo eliminar: {str(e)}")
+            registrar_error('censo_habitantes', '_eliminar_habitante_seleccion', str(e), contexto=f"folio={folio}")
     
     def __folio_seleccionado(self):
         """Obtiene el folio del habitante seleccionado"""
@@ -694,11 +781,13 @@ class SistemaCensoHabitantes:
     # ===== MÉTODOS DE PREFERENCIAS =====
     
     def _cargar_y_aplicar_preferencias(self):
-        """Carga y aplica preferencias del usuario"""
-        prefs = cargar_preferencias(self.config_usuario_path)
-        if prefs:
-            self.root.after(100, lambda: aplicar_preferencias(prefs, self.search_var, self.filtro_estado))
-            self.root.after(200, self._aplicar_filtros)
+        """NO cargar preferencias automáticamente - iniciar siempre con búsqueda limpia"""
+        # Comentado para evitar que se guarde el historial de búsqueda
+        # prefs = cargar_preferencias(self.config_usuario_path)
+        # if prefs:
+        #     self.root.after(100, lambda: aplicar_preferencias(prefs, self.search_var, self.filtro_estado))
+        #     self.root.after(200, self._aplicar_filtros)
+        pass
     
     # ===== MÉTODOS AUXILIARES =====
     
@@ -732,6 +821,30 @@ class SistemaCensoHabitantes:
         else:
             self.tree.column('nombre', width=0, minwidth=0)
     
+    def cleanup_procesos_hijos(self):
+        """Termina procesos hijos de pagos y faenas al cerrar"""
+        procesos = [
+            ('pagos', self.proceso_control_pagos),
+            ('faenas', self.proceso_control_faenas)
+        ]
+        
+        for nombre, proceso in procesos:
+            if proceso and proceso.poll() is None:
+                try:
+                    proceso.terminate()
+                    try:
+                        proceso.wait(timeout=2)
+                    except subprocess.TimeoutExpired:
+                        proceso.kill()
+                        proceso.wait()
+                except Exception as e:
+                    print(f"Error terminando proceso {nombre}: {e}")
+    
+    def cerrar_con_cleanup(self):
+        """Cierra ventana y limpia procesos hijos"""
+        self.cleanup_procesos_hijos()
+        self.root.destroy()
+    
     def abrir_control_pagos(self):
         """Abre el módulo de control de pagos"""
         if self.proceso_control_pagos and self.proceso_control_pagos.poll() is None:
@@ -744,7 +857,16 @@ class SistemaCensoHabitantes:
             pagos_script = os.path.join(proyecto_raiz, "src", "modules", "pagos", "control_pagos.py")
             
             if os.path.exists(pagos_script):
-                self.proceso_control_pagos = subprocess.Popen([sys.executable, pagos_script])
+                if sys.platform == 'win32':
+                    pythonw_exe = sys.executable.replace("python.exe", "pythonw.exe")
+                    if os.path.exists(pythonw_exe):
+                        self.proceso_control_pagos = subprocess.Popen([pythonw_exe, pagos_script])
+                    else:
+                        CREATE_NO_WINDOW = 0x08000000
+                        self.proceso_control_pagos = subprocess.Popen([sys.executable, pagos_script],
+                                                                     creationflags=CREATE_NO_WINDOW)
+                else:
+                    self.proceso_control_pagos = subprocess.Popen([sys.executable, pagos_script])
             else:
                 messagebox.showerror("Error", f"No se encontró el módulo de pagos en: {pagos_script}")
         except Exception as e:
@@ -762,7 +884,16 @@ class SistemaCensoHabitantes:
             faenas_script = os.path.join(proyecto_raiz, "src", "modules", "faenas", "control_faenas.py")
             
             if os.path.exists(faenas_script):
-                self.proceso_control_faenas = subprocess.Popen([sys.executable, faenas_script])
+                if sys.platform == 'win32':
+                    pythonw_exe = sys.executable.replace("python.exe", "pythonw.exe")
+                    if os.path.exists(pythonw_exe):
+                        self.proceso_control_faenas = subprocess.Popen([pythonw_exe, faenas_script])
+                    else:
+                        CREATE_NO_WINDOW = 0x08000000
+                        self.proceso_control_faenas = subprocess.Popen([sys.executable, faenas_script],
+                                                                      creationflags=CREATE_NO_WINDOW)
+                else:
+                    self.proceso_control_faenas = subprocess.Popen([sys.executable, faenas_script])
             else:
                 messagebox.showerror("Error", f"No se encontró el módulo de faenas en: {faenas_script}")
         except Exception as e:

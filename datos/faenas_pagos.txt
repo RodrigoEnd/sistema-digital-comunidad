@@ -1,0 +1,208 @@
+# Lista de faenas y pagos (transcripcion manual desde fotos)
+# Formato: numero. Nombre - Pago
+# Entradas con (?) indican texto o monto dudoso; revisarlas manualmente.
+1. Virgencia De La Cruz Guzman - 300
+2. Consuelo De La Cruz Guzman - 300
+3. Viridiana Sanchez Valdez - 300
+4. Belen Lucia Hernandez - 300
+5. J. Concepcion De La Cruz Castillo - 300
+6. Macaria De La Cruz Sanchez - 300
+7. Jacinta Eleuterio Sanchez - 300
+8. Adrian Vivar Mendoza - 300
+9. Santos Gonzalez Eleuterio - 300
+10. Miguel Angel Domingo Gonzalez - 300
+11. Ricardo Mendoza Crescencio - 300
+12. Victorino Sanchez Mendoza - 300
+13. Victoriano Sanchez Mendoza - 300
+14. Joel Macedonio Martinez - 300
+15. Bernabe Concepcion Eleuterio - 300
+16. Teodosio Angeles Gonzalez Cruz - 300
+17. Uriel Vasquez Gonzalez - 300
+18. Angela Ortega Eleuterio - 300
+19. Mouser Hernandez Matias - 300
+20. Leopardo Eleuterio Martinez - 300
+21. Alila Gloria Gaspar Mendoza - 300
+22. Daniel Sanchez Mendoza - 200
+23. Alejandro Sanchez Gonzalez - 300
+24. Daniel Sanchez Gonzalez - 300
+25. Daniel Sanchez Mendoza - 300
+26. Roberto Valdez Valencia - 300
+27. Enrique Lovera Morales - 300
+28. Cesar Hernandez Albino - 300
+29. Humberto Martinez De La Cruz - 300
+30. Francisco Martinez Domingo - 300
+31. Mario Martinez Domingo - 300
+32. Benigno Mendoza De La Cruz - 300
+33. Juan Mendoza Valdez - 300
+34. Brigido Mendoza Lovera - 300
+35. Ibeth Medrano Rodriguez - 300
+36. Guadalupe Trejo Olmos - 300
+37. Natividad Vasquez Nicolas - 300
+38. Maria Luisa Garcia Martinez - 300
+39. Erick De La Cruz Eleuterio - 300
+40. Diana De La Cruz Lovera - 300
+41. Aaron De La Cruz Lovera - 300
+42. Juan Jesus Gonzales Hernandez - 300
+43. Silvia Domingo Gaspar - 300
+44. Jose Guadalupe Plata Ortega - 300
+45. Isidro Crescencio Sanchez - 300
+46. Gilberto Crescencio De La Cruz - 300
+47. Eduardo Pina Martinez - 300
+48. Ivan Pina Lopez - 300
+49. Jose Guadalupe Martinez Martinez - 300
+50. Esmeralda Hernandez Hernandez - 300
+51. Alisia Vasquez Crescencio - 300
+52. Valeria Crescencio Domingo - 300
+53. Gregoria Crescencio Martinez - 300
+54. Cesar Crescencio Martinez - 300
+55. Casildo Martinez Vasquez - 300
+56. Evelin Martinez Eleuterio - 300
+57. Tomas Gonzales (ilegible) - 300
+58. Rocio Crescencio Eleuterio - 100 (?)
+59. Miguel Angel Salazar Crescencio - 150 (?)
+60. Victor Domingo Martinez - 150 (?)
+61. Vivencio Domingo Hipolito - 300
+62. Gustavo Domingo Lovera - 300
+63. Diego Alexis Sobrevinas Sanchez - 300
+64. Santos Nicolas Sanchez - 300
+65. Jaqueline Nicolas Crescencio - 300
+66. Mariana Nicolas Crescencio - 300
+67. Ubaldo Gonzales De La Cruz - 300
+68. Bruno Nicolas Sanchez - 200
+69. Rogelio Nicolas Domingo - 300
+70. Antonia Nicolas Domingo - 300
+71. Apolonia De La Cruz Martinez - 300
+72. Josefa Valdez Valdez - 300
+73. Pedro Javier Campos Gaspar - 300
+74. Modesto Martinez Mendoza - 300
+75. Jesus Domingo Nicolas Sobasermas (?) - 300
+76. Axel Nico Andredo (?) - 300
+77. Arturo Osorio Mercado - 300
+78. Jesus Martinez Martinez - 300
+79. Jesus Munguia Alado (?) - 300
+80. Marco Antonio De La Cruz Lovera - 300
+81. Noemy Mendoza Valdez - 300
+82. Mario Alberto Mendoza Valdez - 300
+83. Araceli Nieto Sanchez - 300
+84. Uriel Mendoza Eleuterio - 300
+85. Sergio Mendoza Domingo - 300
+86. Alvaro Martinez Sanchez - 300
+87. Angel Garcia Martinez - 300
+88. Ricardo Martinez Sanchez - 300
+89. Yuzuki Mitkany Martinez Jundo (?) - 300
+90. Axel Gonzales Hernandez - 300
+91. Daniel De La Cruz Hernandez - 300
+92. Diana Eleuterio Martinez Nunez - 300
+93. Juan Pablo Lovera Domingo - 300
+94. Gabriel Cruz De La Cruz - 300
+95. Rocio Crescencio Eleuterio - 200
+96. Miguel Angel Salazar Crescencio - 300
+97. Rogelio Martinez Nunez - 300
+98. Heribaldo Crescencio Romero - 100
+99. Ricardo Mataz Gonzalez - 300
+100. Genaro Pina Hilario - 100
+101. Florentino Serafin Lovera - 150
+102. Bernadino Crescencio Lovera - 200
+103. Armando Crescencio Lovera - 100
+104. Eduardo Crescencio Crescencio - 200
+105. Jose Luis Martinez Martinez - 190
+106. Eraclio Martinez Nunez - 300
+107. Adalberto Martinez Nunez - 300
+108. Kendy Domingo Moreno - 300
+109. Juan Martin Martinez Domingo - 300
+110. Moises Martinez Mendoza - 300
+111. Emilio Crescencio Lovera - 200
+112. Miguel Angel Gonzales Crescencio - 200
+113. Eduardo Valdez Gonzalez - 300
+114. Jose Andres Eleuterio Crescencio - 300
+115. Luis Eleuterio Martinez Crescencio - 300
+116. Oscar Garcia Martinez - 100
+117. Virginia Martinez Mendoza - 200
+118. Marta Mendoza Domingo - 300
+119. Sergio Mendoza Eleuterio - 300
+120. Maribel Mendoza Domingo - 300
+121. Diego Mendoza Juani (?) - 300
+122. Goliath Mendoza Domingo - 300
+123. Beatriz Garcia Martinez - 300
+124. Venancio De La Cruz Castillo - 250
+125. Guillermo Nieto Valdez - 300
+126. Arturo Vasquez Segundo - 300
+127. Andrea Domingo Mendoza - 300
+128. Alisia Hernandez Morales - 300
+129. Edith Cruz De La Cruz - 300
+130. Maria Guadalupe Cruz De La Cruz - 300
+131. Luis Cruz De La Cruz - 300
+132. Damian Cruz De La Cruz - 300
+133. Elelio Cruz De La Cruz (?) - 300
+134. Reyna Gimenez Vasquez - 300
+135. Domingo Martinez Vazquez - 300
+136. Samuc Albiter Medrano Rodrigues - 100
+137. Benigno Lugo Medrano Rodrigues - 150
+138. Zenona Martinez Crescencio - 300
+139. Victor De La Cruz Guzman - 300
+140. Rocio Fidel Martinez - 100
+141. Margarito Manuel Flores - 300
+142. Ernesto Gonzalez (Bbs) - 300
+143. Juan Jose Domingo Gonzalez - 300
+144. Imelda Domingo Gonzalez - 300
+145. Oscar Misael Rangel Vazquez - 300
+146. Crescencio Martinez Mercado - 300
+147. Francisco Domingo Abraham - 300
+148. Gabriela De La Cruz Valencia - 300
+149. Sergio Martinez Hernandez - 300
+150. Julio Cesar Nieto Martinez - 300
+151. Juliana Martinez Eclesario - 300
+152. Ulises Lovera Nieto - 300
+153. Sergio Vasquez Nicolas - 150
+154. Sergio Gaspar Domingo - 200
+155. Maria Guadalupe Sanchez Nieto - 100
+156. Margarito Martinez Hernandez - 100
+157. Guadalupe Lizelett Matias Lovera - 100
+158. Andres Crescencio Romero - 300
+159. Lourdes Crescencio Urbina - 100
+160. Maria Guadalupe Miranda Lovera - 300
+161. Jesus Valdez Valencia - 300
+162. Julio Vasquez De La Cruz - 300
+163. Osbaldo Vasquez De La Cruz - 300
+164. Ulises Mendoza Valdez - 200
+165. Evaristo Hernandez Torres - 300
+166. Samuel Mendoza Valdez - 100
+167. Petronilo Vasquez De La Cruz - 300
+168. Maria De La Luz De La Cruz Suarez - 300
+169. Domingo De La Cruz Castillo - 300
+170. Sergio Domingo Hipolito - 300
+171. Ramiro De La Cruz Sanchez - 300
+172. Olivia Nieto Cruz - 300
+173. Fausto Vasquez Gaspar - 300
+174. Odilon Nieto Angeles - 300
+175. Alvino Sanchez Hernandez - 300
+176. Beatriz Nicolas Hernandez - 170
+177. Maria De Los Angeles De La Cruz - 300
+178. Angel Valencia Gonzalez - 150
+179. Rigoberto Domingo Mendez - 300
+180. Gabriela Domingo Hipolito - 300
+181. Alejandro Nicolas Crescencio - 300
+182. Fabiola Nicolas Crescencio - 300
+183. Fabian Nicolas Crescencio - 300
+184. Nancy Nicolas Crescencio - 300
+185. Jose Ernesto Paulino Crescencio - 300
+186. Jhovany Martinez Mendoza - 300
+187. Rogelio Nicolas Valdez - 300
+188. Jose Luis Eleuterio Vazquez - 300
+189. Venancio Crescencio Romero - 100
+190. Pablo Suarez Penalosa - 100
+191. Oscar Garcia Martinez - 200
+192. Virginia Martinez Mendoza - 100
+193. Benagrido Fidel Martinez (?) - 100
+194. Eduardo Crescencio Romero - 300
+195. Benigno De La Cruz Castillo - 200
+196. Ubaldo Acacio Martinez - 300
+197. Pablo Pacio Martinez - 300
+198. Sandra Martinez Crescencio - 300
+199. Pedro Angel Martinez Crescencio - 300
+200. Fernando Martinez Crescencio - 300
+201. Laura Gomez Vazquez - 300
+202. Vicente Sanchez Mendoza - 300
+203. Omar Martinez Eclesario - 300
+204. Anelma Domingo Mendoza - 300
+205. Wenseslao Domingo Abraham - 300

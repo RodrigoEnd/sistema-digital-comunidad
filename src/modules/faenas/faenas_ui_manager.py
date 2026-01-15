@@ -9,10 +9,11 @@ from src.ui.ui_moderna import BarraSuperior, PanelModerno, BotonModerno
 from src.config import (
     HORA_INICIO_DEFECTO, HORA_INICIO_AMPM_DEFECTO,
     HORA_FIN_DEFECTO, HORA_FIN_AMPM_DEFECTO,
-    PESO_FAENA_DEFECTO
+    PESO_FAENA_DEFECTO, UI_DEBOUNCE_FILTER
 )
 from src.modules.faenas.dashboard_faenas import DashboardFaenas
 from src.modules.faenas.buscador_avanzado import BuscadorAvanzadoFaenas
+from src.core.optimizador_ui import get_ui_optimizer
 
 
 class FaenasUIManager:
@@ -44,6 +45,9 @@ class FaenasUIManager:
         self.buscar_participante_var = tk.StringVar()
         self.anio_var = tk.StringVar(value=str(datetime.now().year))
         self.resumen_buscar_var = tk.StringVar()
+        
+        # Optimizador UI
+        self._optimizer = get_ui_optimizer()
 
         # Referencias a widgets
         self.barra: Optional[BarraSuperior] = None
@@ -353,8 +357,9 @@ class FaenasUIManager:
 
         entry_resumen_buscar = ttk.Entry(filtros, textvariable=self.resumen_buscar_var, width=24)
         entry_resumen_buscar.pack(side=tk.LEFT)
-        self.resumen_buscar_var.trace_add('write',
-                                         lambda *args: self.callbacks.get('actualizar_resumen')())
+        # Usar KeyRelease en lugar de trace para mejor rendimiento
+        entry_resumen_buscar.bind('<KeyRelease>', 
+                                  lambda e: self._buscar_resumen_debounced())
 
     def _crear_tree_resumen(self) -> None:
         """Crear TreeView de resumen"""
@@ -374,6 +379,14 @@ class FaenasUIManager:
 
         self.tree_resumen.grid(row=1, column=0, sticky='nsew')
         scroll_y.grid(row=1, column=1, sticky='ns')
+    
+    def _buscar_resumen_debounced(self):
+        """Búsqueda en resumen con debouncing"""
+        self._optimizer.debounce.debounce(
+            'faenas_resumen_search',
+            UI_DEBOUNCE_FILTER,
+            self.callbacks.get('actualizar_resumen')
+        )
 
     def limpiar_formulario(self) -> None:
         """Limpiar campos del formulario"""

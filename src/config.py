@@ -14,61 +14,6 @@ except ImportError:
     # dotenv no instalado, usar valores hardcoded
     pass
 
-# API
-API_URL = os.getenv("API_URL", "http://127.0.0.1:5000/api")
-API_PORT = int(os.getenv("API_PORT", "5000"))
-API_HOST = os.getenv("API_HOST", "127.0.0.1")
-
-# Modo offline: si es True no se requiere la API para operar
-MODO_OFFLINE = os.getenv("MODO_OFFLINE", "False").lower() == "true"
-
-# ============================================================================
-# DOCUMENTACION DE ENDPOINTS DE API LOCAL
-# ============================================================================
-# Todos los endpoints estan disponibles en http://127.0.0.1:5000/
-# 
-# HABITANTES:
-#   GET    /api/habitantes              - Obtener todos los habitantes
-#   GET    /api/habitantes/buscar?q=xxx - Buscar habitantes por criterio
-#   GET    /api/habitantes/nombre/<nom> - Obtener habitante por nombre exacto
-#   POST   /api/habitantes              - Agregar nuevo habitante
-#   PATCH  /api/habitantes/<folio>      - Actualizar habitante
-#
-# FOLIOS:
-#   GET    /api/folio/siguiente         - Obtener siguiente folio disponible
-#
-# SINCRONIZACION:
-#   POST   /api/sync/verificar          - Verificar/crear habitante si no existe
-#
-# SALUD:
-#   GET    /ping                        - Verificar que API esta funcionando
-#
-# NOTAS:
-#   - Todos los metodos retornan JSON
-#   - Campo 'success' indica exito/error
-#   - Errores retornan codigo HTTP apropiado (400, 404, 500)
-# ============================================================================
-
-# Tabla de endpoints para referencia rapida
-API_ENDPOINTS = {
-    'habitantes': {
-        'listar': 'GET /api/habitantes',
-        'buscar': 'GET /api/habitantes/buscar',
-        'por_nombre': 'GET /api/habitantes/nombre/<nombre>',
-        'crear': 'POST /api/habitantes',
-        'actualizar': 'PATCH /api/habitantes/<folio>',
-    },
-    'folio': {
-        'siguiente': 'GET /api/folio/siguiente',
-    },
-    'sincronizacion': {
-        'verificar': 'POST /api/sync/verificar',
-    },
-    'salud': {
-        'ping': 'GET /api/ping',
-    }
-}
-
 # Seguridad
 PASSWORD_CIFRADO = os.getenv("PASSWORD_CIFRADO", "SistemaComunidad2026")
 SALT_CIFRADO = os.getenv("SALT_CIFRADO", "SistemaComunidad2026Salt").encode()
@@ -176,10 +121,28 @@ HORA_FIN_DEFECTO = '1'
 HORA_FIN_AMPM_DEFECTO = 'PM'
 
 # Censo - Constantes de interfaz
-CENSO_DEBOUNCE_MS = 180
+CENSO_DEBOUNCE_MS = 500  # Aumentado para mejor estabilidad
 CENSO_NOTA_MAX_DISPLAY = 30
 CENSO_NOMBRES_SIMILARES_MIN_PALABRAS = 2
 CENSO_NOMBRES_SIMILARES_MAX_RESULTADOS = 5
+
+# ===== OPTIMIZACIÓN DE UI =====
+# Tiempos de debounce globales (en milisegundos)
+UI_DEBOUNCE_SEARCH = 500      # Búsqueda en tiempo real
+UI_DEBOUNCE_FILTER = 400       # Filtros
+UI_DEBOUNCE_INPUT = 300        # Input general
+UI_DEBOUNCE_SAVE = 1000        # Guardado automático
+
+# Virtualización de tablas
+UI_VIRTUAL_TABLE_VISIBLE_ROWS = 25   # Filas visibles en viewport
+UI_VIRTUAL_TABLE_BUFFER_ROWS = 10    # Filas de buffer arriba/abajo
+
+# Caché
+UI_CACHE_MAX_SIZE = 200        # Máximo de entradas en caché
+UI_CACHE_TTL_SECONDS = 600     # Tiempo de vida del caché (10 min)
+
+# Workers
+UI_MAX_BACKGROUND_WORKERS = 4  # Threads simultáneos máximos
 
 # Censo - Columnas del TreeView
 CENSO_COLUMNAS = ['folio', 'nombre', 'fecha_registro', 'activo', 'nota']

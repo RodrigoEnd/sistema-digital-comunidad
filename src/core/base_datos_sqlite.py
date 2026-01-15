@@ -22,24 +22,29 @@ class BaseDatosSQLite:
         
     def conectar(self):
         """Conectar a la base de datos con reintentos automáticos"""
-        max_intentos = 3
-        tiempo_espera = 0.5
+        max_intentos = 5
+        tiempo_espera = 0.2
         
         for intento in range(max_intentos):
             try:
-                self.conexion = sqlite3.connect(self.ruta_db, timeout=30.0)
+                # Timeout más largo para evitar "database is locked"
+                self.conexion = sqlite3.connect(self.ruta_db, timeout=60.0, check_same_thread=False)
                 self.conexion.row_factory = sqlite3.Row
                 # Habilitar claves foráneas
                 self.conexion.execute("PRAGMA foreign_keys = ON")
-                # Configurar WAL mode para mejor concurrencia
+                # Configurar WAL mode para mejor concurrencia (permite lecturas mientras se escribe)
                 self.conexion.execute("PRAGMA journal_mode=WAL")
-                # Timeout para operaciones bloqueadas
-                self.conexion.execute("PRAGMA busy_timeout=5000")
+                # Timeout para operaciones bloqueadas (10 segundos)
+                self.conexion.execute("PRAGMA busy_timeout=10000")
+                # Optimizaciones de rendimiento
+                self.conexion.execute("PRAGMA synchronous=NORMAL")
+                self.conexion.execute("PRAGMA cache_size=10000")
                 return self.conexion
             except sqlite3.OperationalError as e:
                 if "database is locked" in str(e) and intento < max_intentos - 1:
-                    tiempo_espera *= 2
+                    print(f"[BD] Base de datos bloqueada, reintentando ({intento+1}/{max_intentos})...")
                     time.sleep(tiempo_espera)
+                    tiempo_espera *= 1.5
                     continue
                 registrar_error('BaseDatosSQLite', 'conectar', str(e))
                 raise
@@ -193,6 +198,22 @@ class BaseDatosSQLite:
                 ON auditoria(fecha_operacion DESC)
             ''')
             
+            # Crear índices para mejorar rendimiento de búsquedas
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_habitantes_nombre 
+                ON habitantes(nombre)
+            ''')
+            
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_habitantes_folio 
+                ON habitantes(folio)
+            ''')
+            
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_habitantes_activo 
+                ON habitantes(activo)
+            ''')
+            
             cursor.execute('''
                 CREATE INDEX IF NOT EXISTS idx_auditoria_usuario 
                 ON auditoria(usuario)
@@ -306,13 +327,13 @@ class BaseDatosSQLite:
             return None, f"Error al agregar habitante: {str(e)}"
     
     def obtener_todos_habitantes(self):
-        """Obtener todos los habitantes activos"""
+        """Obtener todos los habitantes activos ordenados por folio"""
         cursor = self.conectar().cursor()
         
         try:
             cursor.execute("""
                 SELECT * FROM habitantes WHERE activo = 1 
-                ORDER BY nombre ASC
+                ORDER BY CAST(SUBSTR(folio, 5) AS INTEGER) ASC
             """)
             habitantes = [dict(row) for row in cursor.fetchall()]
             return habitantes
