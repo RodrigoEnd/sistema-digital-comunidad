@@ -100,6 +100,8 @@ class SistemaControlPagos:
         self.cargar_datos()
         
         # === INICIALIZAR GESTORES MODULARIZADOS - DESPUÉS de cargar datos ===
+        from src.core.base_datos_sqlite import obtener_bd
+        self.bd = obtener_bd()  # Añadir acceso a BD para verificar contraseñas
         self.gestor_datos = GestorDatos(ARCHIVO_PAGOS, PASSWORD_CIFRADO)
         self.gestor_cooperaciones = GestorCooperaciones(ARCHIVO_PAGOS, None)
         # Sincronizar datos con gestores
@@ -304,34 +306,194 @@ class SistemaControlPagos:
         return resultado['success']
     
     def solicitar_password(self):
-        """Solicitar contraseña para modificar monto"""
+        """Solicita contraseña del usuario actual para operaciones sensibles"""
+        # Verificar que hay un usuario logueado
+        if not self.usuario_actual:
+            messagebox.showerror("Error", "No hay usuario autenticado")
+            return False
+        
         dialog = tk.Toplevel(self.root)
-        dialog.title("Contraseña Requerida")
-        dialog.geometry("350x150")
+        dialog.title("🔒 Confirmar Identidad")
+        dialog.geometry("450x300")
         dialog.transient(self.root)
         dialog.grab_set()
+        dialog.resizable(False, False)
+        dialog.configure(bg=self.tema_global.get('bg_principal', '#ffffff'))
         
-        ttk.Label(dialog, text="Ingrese la contraseña para modificar el monto:", 
-                 font=('Arial', 10, 'bold')).pack(pady=10)
+        # Centrar ventana
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - 225
+        y = (dialog.winfo_screenheight() // 2) - 150
+        dialog.geometry(f"450x300+{x}+{y}")
         
-        pass_entry = ttk.Entry(dialog, show="*", width=30)
-        pass_entry.pack(pady=10)
+        # Header con icono
+        header = tk.Frame(dialog, bg='#e67e22', height=80)
+        header.pack(fill=tk.X)
+        header.pack_propagate(False)
+        
+        tk.Label(header, text="🔒", font=('Segoe UI', 32),
+                bg='#e67e22', fg='#ffffff').pack(pady=15)
+        
+        # Contenido
+        content = tk.Frame(dialog, bg=self.tema_global.get('bg_principal', '#ffffff'))
+        content.pack(fill=tk.BOTH, expand=True, padx=30, pady=25)
+        
+        tk.Label(content, text="Confirmar tu Identidad", 
+                font=('Arial', 13, 'bold'),
+                bg=self.tema_global.get('bg_principal', '#ffffff'),
+                fg=self.tema_global.get('fg_principal', '#333333')).pack(pady=(0, 5))
+        
+        # Mostrar usuario actual
+        tk.Label(content, text=f"Usuario: {self.usuario_actual.get('nombre', self.usuario_actual.get('usuario', 'Desconocido'))}", 
+                font=('Arial', 10, 'bold'),
+                bg=self.tema_global.get('bg_principal', '#ffffff'),
+                fg='#e67e22').pack(pady=(0, 5))
+        
+        tk.Label(content, text="Ingresa tu contraseña para confirmar:", 
+                font=('Arial', 10),
+                bg=self.tema_global.get('bg_principal', '#ffffff'),
+                fg=self.tema_global.get('fg_secundario', '#666666')).pack(pady=(0, 15))
+        
+        # Campo de contraseña
+        pass_frame = tk.Frame(content, bg=self.tema_global.get('bg_principal', '#ffffff'))
+        pass_frame.pack(fill=tk.X, pady=(0, 20))
+        
+        pass_entry = tk.Entry(pass_frame, show="●", width=35, font=('Arial', 11),
+                             bg=self.tema_global.get('input_bg', '#ffffff'),
+                             fg=self.tema_global.get('fg_principal', '#333333'),
+                             relief=tk.SOLID, bd=1, insertbackground='#e67e22')
+        pass_entry.pack(ipady=8)
         
         resultado = {'success': False}
         
-        def verificar():
+        def verificar(event=None):
             password = pass_entry.get()
-            if seguridad.verificar_password(password, self.password_hash):
-                resultado['success'] = True
-                dialog.destroy()
-            else:
-                messagebox.showerror("Error", "Contraseña incorrecta")
+            if not password:
+                messagebox.showwarning("Advertencia", "Por favor ingrese la contraseña")
+                pass_entry.focus()
+                return
+            
+            try:
+                # Verificar contraseña usando el sistema de autenticación
+                import hashlib
+                hash_ingresado = hashlib.sha256(password.encode()).hexdigest()
+                
+                # Obtener el nombre de usuario correcto del objeto usuario_actual
+                # Puede estar en 'usuario' o 'nombre'
+                nombre_usuario = self.usuario_actual.get('usuario') or self.usuario_actual.get('nombre')
+                
+                # Debug: ver qué estamos buscando
+                print(f"[DEBUG] Buscando usuario: {nombre_usuario}")
+                print(f"[DEBUG] Usuario actual completo: {self.usuario_actual}")
+                
+                # Obtener datos del usuario desde la BD
+                usuario_bd = self.bd.obtener_usuario(nombre_usuario)
+                
+                if not usuario_bd:
+                    messagebox.showerror("Error", f"Usuario '{nombre_usuario}' no encontrado en la base de datos")
+                    pass_entry.delete(0, tk.END)
+                    pass_entry.focus()
+                    return
+                
+                print(f"[DEBUG] Hash ingresado: {hash_ingresado}")
+                print(f"[DEBUG] Hash en BD: {usuario_bd.get('contraseña', 'NO_HASH')}")
+                
+                if hash_ingresado == usuario_bd['contraseña']:
+                    resultado['success'] = True
+                    dialog.destroy()
+                else:
+                    messagebox.showerror("Error", "Contraseña incorrecta")
+                    pass_entry.delete(0, tk.END)
+                    pass_entry.focus()
+            except Exception as e:
+                print(f"[ERROR] Verificación de contraseña: {e}")
+                messagebox.showerror("Error", f"Error al verificar contraseña: {str(e)}")
                 pass_entry.delete(0, tk.END)
                 pass_entry.focus()
         
-        ttk.Button(dialog, text="Verificar", command=verificar, width=18).pack(pady=5)
-        ttk.Button(dialog, text="Cancelar", command=dialog.destroy, width=12).pack(pady=5)
-        dialog.bind("<Return>", lambda event: verificar())
+        # Botones
+        btn_frame = tk.Frame(content, bg=self.tema_global.get('bg_principal', '#ffffff'))
+        btn_frame.pack(fill=tk.X, pady=(0, 0))
+        
+        btn_verificar = tk.Button(btn_frame, text="✓ Verificar", command=verificar,
+                                 bg='#e67e22', fg='#ffffff',
+                                 font=('Arial', 11, 'bold'), padx=30, pady=10,
+                                 relief=tk.FLAT, bd=0, cursor='hand2',
+                                 activebackground='#d35400')
+        btn_verificar.pack(side=tk.LEFT, padx=(0, 10), fill=tk.X, expand=True)
+        
+        btn_cancelar = tk.Button(btn_frame, text="✕ Cancelar", command=dialog.destroy,
+                                bg=self.tema_global.get('bg_secundario', '#f0f0f0'),
+                                fg=self.tema_global.get('fg_principal', '#333333'),
+                                font=('Arial', 11), padx=30, pady=10,
+                                relief=tk.FLAT, bd=1, cursor='hand2',
+                                activebackground='#e0e0e0')
+        btn_cancelar.pack(side=tk.RIGHT, fill=tk.X, expand=True)
+        
+        # Efectos hover
+        def on_enter_verificar(e):
+            btn_verificar.config(bg='#d35400')
+        
+        def on_leave_verificar(e):
+            btn_verificar.config(bg='#e67e22')
+        
+        def on_enter_cancelar(e):
+            btn_cancelar.config(bg='#e0e0e0')
+        
+        def on_leave_cancelar(e):
+            btn_cancelar.config(bg=self.tema_global.get('bg_secundario', '#f0f0f0'))
+        
+        btn_verificar.bind("<Enter>", on_enter_verificar)
+        btn_verificar.bind("<Leave>", on_leave_verificar)
+        btn_cancelar.bind("<Enter>", on_enter_cancelar)
+        btn_cancelar.bind("<Leave>", on_leave_cancelar)
+        
+        # Enter para verificar, Escape para cancelar
+        dialog.bind("<Return>", verificar)
+        dialog.bind("<Escape>", lambda e: dialog.destroy())
+        pass_entry.focus()
+        
+        dialog.wait_window()
+        return resultado['success']
+        btn_frame = tk.Frame(content, bg=self.tema_global.get('bg_principal', '#ffffff'))
+        btn_frame.pack(fill=tk.X, pady=(0, 0))
+        
+        btn_verificar = tk.Button(btn_frame, text="✓ Verificar", command=verificar,
+                                 bg='#e67e22', fg='#ffffff',
+                                 font=('Arial', 11, 'bold'), padx=30, pady=10,
+                                 relief=tk.FLAT, bd=0, cursor='hand2',
+                                 activebackground='#d35400')
+        btn_verificar.pack(side=tk.LEFT, padx=(0, 10), fill=tk.X, expand=True)
+        
+        btn_cancelar = tk.Button(btn_frame, text="✕ Cancelar", command=dialog.destroy,
+                                bg=self.tema_global.get('bg_secundario', '#f0f0f0'),
+                                fg=self.tema_global.get('fg_principal', '#333333'),
+                                font=('Arial', 11), padx=30, pady=10,
+                                relief=tk.FLAT, bd=1, cursor='hand2',
+                                activebackground='#e0e0e0')
+        btn_cancelar.pack(side=tk.RIGHT, fill=tk.X, expand=True)
+        
+        # Efectos hover
+        def on_enter_verificar(e):
+            btn_verificar.config(bg='#d35400')
+        
+        def on_leave_verificar(e):
+            btn_verificar.config(bg='#e67e22')
+        
+        def on_enter_cancelar(e):
+            btn_cancelar.config(bg='#e0e0e0')
+        
+        def on_leave_cancelar(e):
+            btn_cancelar.config(bg=self.tema_global.get('bg_secundario', '#f0f0f0'))
+        
+        btn_verificar.bind("<Enter>", on_enter_verificar)
+        btn_verificar.bind("<Leave>", on_leave_verificar)
+        btn_cancelar.bind("<Enter>", on_enter_cancelar)
+        btn_cancelar.bind("<Leave>", on_leave_cancelar)
+        
+        # Enter para verificar, Escape para cancelar
+        dialog.bind("<Return>", verificar)
+        dialog.bind("<Escape>", lambda e: dialog.destroy())
         pass_entry.focus()
         
         dialog.wait_window()
@@ -581,24 +743,36 @@ class SistemaControlPagos:
     
     def corregir_folios(self):
         """Detecta y corrige folios duplicados sincronizando con el censo"""
+        if not self._tiene_permiso('editar'):
+            return
+            
         from src.core.utilidades import detectar_folios_duplicados, corregir_folios_duplicados
+        
+        if not self.personas:
+            messagebox.showwarning("Advertencia", "No hay personas en la cooperación actual")
+            return
         
         # Detectar duplicados
         duplicados = detectar_folios_duplicados(self.personas)
         
         if not duplicados:
-            messagebox.showinfo("Sin Problemas", "No se encontraron folios duplicados en esta cooperación")
+            messagebox.showinfo("✓ Sin Problemas", 
+                f"No se encontraron folios duplicados\n\n"
+                f"Total personas revisadas: {len(self.personas)}")
             return
         
         # Mostrar información de duplicados
-        mensaje_duplicados = "Folios duplicados encontrados:\n\n"
+        mensaje_duplicados = "⚠️ FOLIOS DUPLICADOS ENCONTRADOS\n\n"
+        total_afectados = 0
         for folio, nombres in duplicados.items():
-            mensaje_duplicados += f"Folio {folio}:\n"
+            mensaje_duplicados += f"Folio {folio} ({len(nombres)} personas):\n"
             for nombre in nombres:
-                mensaje_duplicados += f"  - {nombre}\n"
+                mensaje_duplicados += f"  • {nombre}\n"
+                total_afectados += 1
             mensaje_duplicados += "\n"
         
-        mensaje_duplicados += "\n¿Desea corregir automáticamente sincronizando con el censo?"
+        mensaje_duplicados += f"Total de personas afectadas: {total_afectados}\n\n"
+        mensaje_duplicados += "¿Desea corregir automáticamente sincronizando con el censo?"
         
         if not messagebox.askyesno("Folios Duplicados Detectados", mensaje_duplicados):
             return
@@ -607,19 +781,28 @@ class SistemaControlPagos:
         resultado = corregir_folios_duplicados(self.personas, self.api_url)
         
         if resultado['exito']:
-            self.actualizar_tabla()
+            # Guardar cambios inmediatamente
             self.guardar_datos(mostrar_alerta=False, inmediato=True)
+            self.actualizar_tabla()
             
-            mensaje = f"{resultado['mensaje']}\n\n"
+            mensaje = f"✓ CORRECCIÓN COMPLETADA\n\n"
+            mensaje += f"{resultado['mensaje']}\n\n"
             mensaje += f"Duplicados encontrados: {resultado.get('duplicados_encontrados', 0)}\n"
             mensaje += f"Folios corregidos: {resultado.get('corregidos', 0)}"
             
             if resultado.get('errores'):
-                mensaje += f"\n\nErrores: {len(resultado['errores'])}"
+                mensaje += f"\n⚠️ Errores encontrados: {len(resultado['errores'])}"
+            
+            # Registrar operación
+            registrar_operacion('CORREGIR_FOLIOS', 'Folios duplicados corregidos', {
+                'duplicados': resultado.get('duplicados_encontrados', 0),
+                'corregidos': resultado.get('corregidos', 0),
+                'cooperacion': self.cooperacion_actual
+            }, self.usuario_actual['nombre'] if self.usuario_actual else 'Sistema')
             
             messagebox.showinfo("Corrección Completada", mensaje)
         else:
-            messagebox.showerror("Error", f"Error al corregir folios: {resultado.get('error', 'Desconocido')}")
+            messagebox.showerror("Error", f"Error al corregir folios:\n{resultado.get('error', 'Desconocido')}")
 
     def refrescar_interfaz_cooperacion(self):
         """BUGFIX: Actualiza todos los elementos UI cuando cambia cooperación"""
@@ -1126,6 +1309,7 @@ class SistemaControlPagos:
     def sincronizar_con_censo(self, nombre):
         """Sincronizar persona con la base de datos de censo - buscar/crear folio permanente"""
         if MODO_OFFLINE:
+            print("[CENSO] Modo offline - generando folio local")
             return self.generar_folio_local()
         
         try:
@@ -1133,47 +1317,73 @@ class SistemaControlPagos:
             nombre_lower = nombre.lower().strip()
             for persona in self.personas:
                 if persona['nombre'].lower().strip() == nombre_lower:
-                    # Ya existe en pagos, no agregar duplicado
+                    # Ya existe en pagos, retornar su folio
+                    print(f"[CENSO] Persona ya existe en pagos: {nombre}")
                     return persona.get('folio')
             
             # PASO 2: Buscar por nombre exacto en censo
             try:
+                print(f"[CENSO] Buscando '{nombre}' en censo...")
                 response = requests.get(f"{self.api_url}/habitantes/nombre/{nombre}",
                                         timeout=5)
                 if response.status_code == 200:
                     data = response.json()
                     if data.get('success') and data.get('habitante'):
                         folio = data['habitante']['folio']
+                        print(f"[CENSO] ✓ Encontrado en censo - Folio: {folio}")
                         # Verificar que el folio no esté duplicado en esta cooperación
                         if not any(p.get('folio') == folio for p in self.personas):
                             return folio
                         else:
-                            print(f"Advertencia: Folio {folio} ya existe en esta cooperación")
+                            print(f"[CENSO] ⚠ Folio {folio} ya existe en esta cooperación")
                             return folio
+                else:
+                    print(f"[CENSO] No encontrado en censo (Status: {response.status_code})")
             except Exception as e:
-                print(f"Error al buscar en censo por nombre: {e}")
+                print(f"[CENSO] Error al buscar: {e}")
             
             # PASO 3: Si no existe, crear nuevo habitante en censo
             try:
+                print(f"[CENSO] Agregando '{nombre}' al censo...")
                 response = requests.post(f"{self.api_url}/habitantes",
                                         json={'nombre': nombre},
                                         timeout=5)
-                if response.status_code == 200:
+                
+                print(f"[CENSO] Response status: {response.status_code}")
+                print(f"[CENSO] Response text: {response.text}")
+                
+                if response.status_code in [200, 201]:
                     data = response.json()
                     if data.get('success') and data.get('habitante'):
                         folio = data['habitante']['folio']
-                        print(f"Habitante agregado a censo: {nombre} (Folio: {folio})")
+                        print(f"[CENSO] ✓✓ Habitante agregado exitosamente - Folio: {folio}")
+                        
+                        # Verificar que realmente se agregó
+                        import time
+                        time.sleep(0.5)  # Esperar un momento
+                        verify_response = requests.get(f"{self.api_url}/habitantes/folio/{folio}", timeout=3)
+                        if verify_response.status_code == 200:
+                            print(f"[CENSO] ✓ Verificado en censo")
+                        
                         return folio
+                    else:
+                        print(f"[CENSO] ✗ Respuesta sin habitante: {data}")
                 else:
-                    print(f"Error al crear habitante: Status {response.status_code}")
+                    print(f"[CENSO] ✗ Error al crear habitante: Status {response.status_code}")
+                    print(f"[CENSO] Respuesta: {response.text}")
             except Exception as e:
-                print(f"Error al agregar al censo: {e}")
+                print(f"[CENSO] ✗ Error al agregar al censo: {e}")
+                import traceback
+                traceback.print_exc()
             
             # Si todo falla, retornar None para que genere folio local
+            print("[CENSO] ⚠ Generando folio local por fallo en sincronización")
             return None
             
         except Exception as e:
-            print(f"Error general en sincronizar_con_censo: {e}")
+            print(f"[CENSO] ✗ Error general en sincronizar_con_censo: {e}")
+            import traceback
+            traceback.print_exc()
             return None
 
     def asegurar_api_activa(self):
@@ -1203,18 +1413,39 @@ class SistemaControlPagos:
         return self.gestor_api.generar_folio_local()
     
     def actualizar_monto(self):
+        """Actualiza el monto de cooperación con confirmación mejorada"""
         if not self._tiene_permiso('editar'):
-            return
-        # Solicitar contraseña
-        if not self.solicitar_password():
-            messagebox.showwarning("Cancelado", "Operacion cancelada")
-            self.monto_var.set(self.monto_cooperacion)  # Restaurar valor anterior
             return
         
         try:
             nuevo_monto = self.monto_var.get()
             if nuevo_monto <= 0:
                 messagebox.showerror("Error", "El monto debe ser mayor a 0")
+                self.monto_var.set(self.monto_cooperacion)
+                return
+            
+            # Si el monto es igual, no hacer nada
+            if nuevo_monto == self.monto_cooperacion:
+                messagebox.showinfo("Información", "El monto ingresado es el mismo que el actual.")
+                return
+            
+            # Mostrar ventana de confirmación mejorada
+            confirmar = ConfirmacionMejorada.confirmar_actualizar_monto(
+                self.root,
+                self.monto_cooperacion,
+                nuevo_monto,
+                len(self.personas),
+                self.tema_global
+            )
+            
+            if not confirmar:
+                # Usuario canceló, restaurar valor anterior
+                self.monto_var.set(self.monto_cooperacion)
+                return
+            
+            # Solicitar contraseña después de confirmar
+            if not self.solicitar_password():
+                messagebox.showwarning("Cancelado", "Operación cancelada")
                 self.monto_var.set(self.monto_cooperacion)
                 return
             
@@ -1248,12 +1479,23 @@ class SistemaControlPagos:
                 {'monto_cooperacion': {'anterior': f"${monto_anterior:.2f}", 'nuevo': f"${nuevo_monto:.2f}"}},
                 usuario)
             
-            messagebox.showinfo("Exito", f"Monto actualizado a ${nuevo_monto:.2f}\nSe actualizó el monto esperado de {num_personas_afectadas} persona(s).")
+            # Guardar y actualizar UI
             self.guardar_datos(mostrar_alerta=False)
             self.actualizar_tabla()
             self.actualizar_totales()
+            
+            # Mensaje de éxito
+            messagebox.showinfo("✓ Éxito", 
+                f"Monto actualizado correctamente\n\n"
+                f"Monto anterior: ${monto_anterior:.2f}\n"
+                f"Monto nuevo: ${nuevo_monto:.2f}\n\n"
+                f"Se actualizó el monto esperado de {num_personas_afectadas} persona(s).")
+            
+        except tk.TclError:
+            messagebox.showerror("Error", "Por favor ingrese un monto válido (solo números)")
+            self.monto_var.set(self.monto_cooperacion)
         except Exception as e:
-            messagebox.showerror("Error", f"Por favor ingrese un monto valido\n{str(e)}")
+            messagebox.showerror("Error", f"Error al actualizar monto:\n{str(e)}")
             self.monto_var.set(self.monto_cooperacion)
     
     def agregar_persona(self):
@@ -1301,8 +1543,18 @@ class SistemaControlPagos:
             return
         
         def on_persona_editada(persona, cambios):
+            # Guardar datos inmediatamente
+            self.guardar_datos(mostrar_alerta=False)
             self.actualizar_tabla()
             self.actualizar_totales()
+            
+            # Mensaje de confirmación con detalles de cambios
+            if cambios:
+                campos_cambiados = ", ".join(cambios.keys())
+                messagebox.showinfo("✓ Éxito", 
+                    f"Persona editada correctamente\n\n"
+                    f"Nombre: {persona['nombre']}\n"
+                    f"Campos actualizados: {campos_cambiados}")
         
         DialogoEditarPersona.mostrar(
             parent=self.root,
@@ -1943,15 +2195,18 @@ class SistemaControlPagos:
             coop_actual = next((c for c in self.cooperaciones if c['id'] == self.coop_activa_id), None)
             nombre_coop = coop_actual['nombre'] if coop_actual else "Cooperacion"
             
+            # Sanitizar nombre de archivo (eliminar caracteres inválidos)
+            nombre_coop_safe = "".join(c for c in nombre_coop if c.isalnum() or c in (' ', '-', '_')).strip()
+            
             # Solicitar ubicación de guardado
             archivo = filedialog.asksaveasfilename(
                 defaultextension=".xlsx",
                 filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")],
-                initialfile=f"{nombre_coop}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+                initialfile=f"{nombre_coop_safe}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
             )
             
             if not archivo:
-                return
+                return  # Usuario canceló
             
             # Exportar usando el módulo exportador
             exportador = ExportadorExcel()
@@ -1959,13 +2214,19 @@ class SistemaControlPagos:
                 self.personas, nombre_coop, os.path.basename(archivo)
             )
             
-            if ruta_archivo:
+            if ruta_archivo and os.path.exists(ruta_archivo):
                 registrar_operacion('EXPORTAR_EXCEL', 'Datos exportados a Excel', 
-                    {'cooperacion': nombre_coop, 'archivo': ruta_archivo, 'total_personas': len(self.personas)})
-                messagebox.showinfo("Éxito", f"Datos exportados correctamente a:\n{ruta_archivo}")
+                    {'cooperacion': nombre_coop, 'archivo': ruta_archivo, 'total_personas': len(self.personas)},
+                    self.usuario_actual['nombre'] if self.usuario_actual else 'Sistema')
+                messagebox.showinfo("✓ Éxito", 
+                    f"Datos exportados correctamente\n\n"
+                    f"Cooperación: {nombre_coop}\n"
+                    f"Total personas: {len(self.personas)}\n"
+                    f"Archivo: {os.path.basename(ruta_archivo)}")
             else:
-                messagebox.showerror("Error", "No se pudo exportar el archivo")
+                messagebox.showerror("Error", "No se pudo crear el archivo Excel")
         except Exception as e:
+            registrar_error('control_pagos', 'exportar_excel', str(e))
             registrar_error('EXPORTAR_EXCEL', str(e))
             messagebox.showerror("Error", f"Error al exportar: {str(e)}")
     

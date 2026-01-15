@@ -117,9 +117,21 @@ class DialogoRegistrarPago:
                 
                 # Confirmar si el monto es mayor al pendiente
                 if monto_pago > pendiente:
-                    if not messagebox.askyesno("Confirmar", 
-                        f"El monto (${monto_pago:.2f}) es mayor al pendiente (${pendiente:.2f}).\n¿Desea continuar?"):
+                    if not messagebox.askyesno("Confirmar Monto", 
+                        f"El monto (${monto_pago:.2f}) es mayor al pendiente (${pendiente:.2f}).\n\n¿Desea continuar con el pago?"):
                         return
+                
+                # MEJORA: Usar confirmación visual para todos los pagos
+                from src.modules.pagos.pagos_confirmaciones import ConfirmacionMejorada
+                if not ConfirmacionMejorada.confirmar_pago(
+                    dialog, 
+                    persona['nombre'], 
+                    monto_pago, 
+                    monto_esperado, 
+                    total_pagado, 
+                    tema_global
+                ):
+                    return
                 
                 # Registrar el pago
                 pago = {

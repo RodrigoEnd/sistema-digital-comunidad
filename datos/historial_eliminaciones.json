@@ -1,0 +1,67 @@
+{
+  "version": "1.0",
+  "fecha_actualización": "2026-01-14T16:12:29.670053",
+  "total_eliminaciones": 3,
+  "eliminaciones": [
+    {
+      "fecha_eliminación": "2026-01-14T14:33:36.309220",
+      "usuario_que_eliminó": "admin",
+      "motivo": "Eliminación por usuario",
+      "datos_persona": {
+        "nombre": "Guillermo Nieto Valdes",
+        "folio": "FOL-0001",
+        "monto_esperado": 100.0,
+        "pagos": [],
+        "notas": ""
+      },
+      "información_audit": {
+        "folio": "FOL-0001",
+        "nombre": "Guillermo Nieto Valdes",
+        "total_pagado": 0,
+        "total_esperado": 100.0,
+        "número_pagos": 0,
+        "cooperación": "Desconocida"
+      }
+    },
+    {
+      "fecha_eliminación": "2026-01-14T14:33:43.222145",
+      "usuario_que_eliminó": "admin",
+      "motivo": "Eliminación por usuario",
+      "datos_persona": {
+        "nombre": "Guillermo Nieto Valdes",
+        "folio": "FOL-0001",
+        "monto_esperado": 100.0,
+        "pagos": [],
+        "notas": ""
+      },
+      "información_audit": {
+        "folio": "FOL-0001",
+        "nombre": "Guillermo Nieto Valdes",
+        "total_pagado": 0,
+        "total_esperado": 100.0,
+        "número_pagos": 0,
+        "cooperación": "Desconocida"
+      }
+    },
+    {
+      "fecha_eliminación": "2026-01-14T16:12:29.658263",
+      "usuario_que_eliminó": "admin",
+      "motivo": "Eliminación por usuario",
+      "datos_persona": {
+        "nombre": "Guillermo Nieto Valdes",
+        "folio": "FOL-0001",
+        "monto_esperado": 100.0,
+        "pagos": [],
+        "notas": ""
+      },
+      "información_audit": {
+        "folio": "FOL-0001",
+        "nombre": "Guillermo Nieto Valdes",
+        "total_pagado": 0,
+        "total_esperado": 100.0,
+        "número_pagos": 0,
+        "cooperación": "Desconocida"
+      }
+    }
+  ]
+}

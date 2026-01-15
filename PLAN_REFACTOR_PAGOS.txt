@@ -1,0 +1,36 @@
+Plan de refactorizacion de pagos (fase 1)
+
+Objetivo
+- Separar responsabilidades de control_pagos.py: UI vs servicio de negocio vs persistencia/infra.
+- Mantener la UI intacta mientras se extraen piezas reutilizables y testeables.
+
+Alcance de esta fase
+- Crear pagos_servicio.py: reglas de negocio sin Tkinter (sin messagebox), para sincronizar con censo y calcular/ajustar cooperaciones.
+- Crear pagos_repo.py: persistencia (cargar/guardar cifrado), exportar Excel, crear backups. Sin lógica de UI.
+- Actualizar control_pagos.py para delegar en servicio/repo, conservando los mismos flujos de usuario.
+
+Principios
+- Sin dependencias de Tkinter en servicio/repo.
+- Servicio devuelve estructuras de datos (dict) y banderas; la UI decide mensajes.
+- No romper compatibilidad de datos cifrados existentes.
+
+Pasos concretos
+1) pagos_repo.py
+   - Clase PagosRepositorio(archivo_datos, password_archivo).
+   - guardar(datos) -> bool; cargar() -> dict|None.
+   - exportar_excel(personas, nombre_coop, nombre_archivo_sugerido) -> ruta o None.
+   - crear_backup() -> dict de resultado (usa GestorBackups).
+
+2) pagos_servicio.py
+   - Clase PagosServicio(api_url).
+   - aplicar_cooperacion_activa(cooperaciones, coop_activa_id, monto_por_defecto, proyecto_por_defecto) -> dict con coop, personas, monto, proyecto, nombre, coop_activa_id.
+   - sincronizar_con_censo(coop) -> dict con habitantes, agregados, personas_no_en_censo, nombres_censo.
+
+3) control_pagos.py
+   - Instanciar PagosRepositorio y PagosServicio en __init__.
+   - Reemplazar cargar_datos/guardar_datos/exportar_excel/crear_backup/sincronizar_coop_con_censo para delegar en servicio/repo y mantener la UI (messagebox) desde aquí.
+   - Mantener guardado diferido (debounce) en la capa UI, pero delegando la escritura real en repo.
+
+4) Validacion rapida
+   - Mantener firmas de métodos usados por la UI.
+   - Revisar flujos: iniciar app, cambiar cooperacion, sincronizar censo, guardar/exportar/backup, registrar pagos.

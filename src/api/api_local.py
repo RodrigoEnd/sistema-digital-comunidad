@@ -6,20 +6,20 @@ import logging
 import warnings
 
 # ==================== SILENCIAR COMPLETAMENTE - ORDEN CRÍTICO ====================
-
+# COMENTADO TEMPORALMENTE PARA DEBUG
 # 1. Redirigir stdout/stderr ANTES de cualquier import que produzca output
-_devnull = open(os.devnull, 'w')
-sys.stdout = _devnull
-sys.stderr = _devnull
+# _devnull = open(os.devnull, 'w')
+# sys.stdout = _devnull
+# sys.stderr = _devnull
 
 # 2. Desactivar warnings de Python
-warnings.filterwarnings('ignore')
+# warnings.filterwarnings('ignore')
 
 # 3. Desactivar todos los logs
-logging.disable(logging.CRITICAL)
-for logger in ['flask', 'werkzeug', 'urllib3', 'requests']:
-    logging.getLogger(logger).disabled = True
-    logging.getLogger(logger).setLevel(logging.CRITICAL)
+# logging.disable(logging.CRITICAL)
+# for logger in ['flask', 'werkzeug', 'urllib3', 'requests']:
+#     logging.getLogger(logger).disabled = True
+#     logging.getLogger(logger).setLevel(logging.CRITICAL)
 
 # Configurar path para imports cuando se ejecuta directamente
 proyecto_raiz = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -28,13 +28,13 @@ if proyecto_raiz not in sys.path:
 
 # Crear app Flask con logging desactivado
 app = Flask(__name__)
-app.logger.disabled = True
-app.logger.setLevel(logging.CRITICAL)
+# app.logger.disabled = True
+# app.logger.setLevel(logging.CRITICAL)
 
 # Desactivar logs de werkzeug (el logger de Flask)
-log_werkzeug = logging.getLogger('werkzeug')
-log_werkzeug.disabled = True
-log_werkzeug.setLevel(logging.CRITICAL)
+# log_werkzeug = logging.getLogger('werkzeug')
+# log_werkzeug.disabled = True
+# log_werkzeug.setLevel(logging.CRITICAL)
 
 # Activar CORS sin mostrar logs
 CORS(app)
@@ -128,27 +128,50 @@ def agregar_habitante():
             'mensaje': mensaje
         }), 400
 
-@app.route('/api/habitantes/<folio>', methods=['PATCH'])
-def actualizar_habitante(folio):
-    """Actualizar estado o nota de un habitante"""
+@app.route('/api/habitantes/<folio>', methods=['PATCH', 'DELETE'])
+def modificar_habitante(folio):
+    """Actualizar o eliminar un habitante según el método HTTP"""
     db_inst = obtener_db()
-    datos = request.get_json() or {}
-    cambios = {}
-    if 'activo' in datos:
-        cambios['activo'] = bool(datos.get('activo'))
-    if 'nota' in datos:
-        cambios['nota'] = datos.get('nota')
+    
+    if request.method == 'PATCH':
+        # Actualizar estado o nota
+        datos = request.get_json() or {}
+        cambios = {}
+        if 'activo' in datos:
+            cambios['activo'] = bool(datos.get('activo'))
+        if 'nota' in datos:
+            cambios['nota'] = datos.get('nota')
 
-    actualizado = db_inst.actualizar_habitante(folio, cambios)
-    if actualizado:
+        actualizado = db_inst.actualizar_habitante(folio, cambios)
+        if actualizado:
+            return jsonify({
+                'success': True,
+                'habitante': actualizado
+            })
         return jsonify({
-            'success': True,
-            'habitante': actualizado
-        })
-    return jsonify({
-        'success': False,
-        'mensaje': 'Habitante no encontrado'
-    }), 404
+            'success': False,
+            'mensaje': 'Habitante no encontrado'
+        }), 404
+    
+    elif request.method == 'DELETE':
+        # Eliminar habitante (soft delete)
+        try:
+            exito, mensaje = db_inst.eliminar_habitante(folio)
+            if exito:
+                return jsonify({
+                    'success': True,
+                    'message': mensaje
+                })
+            else:
+                return jsonify({
+                    'success': False,
+                    'message': mensaje
+                }), 400
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': f'Error al eliminar habitante: {str(e)}'
+            }), 500
 
 @app.route('/api/folio/siguiente', methods=['GET'])
 def obtener_siguiente_folio():

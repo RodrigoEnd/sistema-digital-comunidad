@@ -20,7 +20,7 @@ for name in logging.Logger.manager.loggerDict:
 
 # Ahora importar - sin output visible
 try:
-    from api_local import app
+    from src.api.api_local import app
     
     # Ejecutar sin debug ni reloader ni verbosity
     app.run(
@@ -31,6 +31,17 @@ try:
         threaded=True,
         processes=1
     )
-except:
-    # Ignorar cualquier error silenciosamente
-    pass
+except Exception as e:
+    # Si falla el import absoluto, intentar relativo
+    try:
+        from .api_local import app
+        app.run(
+            host='127.0.0.1',
+            port=5000,
+            debug=False,
+            use_reloader=False,
+            threaded=True,
+            processes=1
+        )
+    except:
+        pass

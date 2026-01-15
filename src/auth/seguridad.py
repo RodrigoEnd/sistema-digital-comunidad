@@ -199,6 +199,8 @@ class SeguridadManager:
     
     def verificar_password(self, password, hash_guardado):
         """Verifica una contraseña contra su hash"""
+        if hash_guardado is None:
+            return False
         if isinstance(hash_guardado, str):
             hash_guardado = hash_guardado.encode()
         return bcrypt.checkpw(password.encode(), hash_guardado)
