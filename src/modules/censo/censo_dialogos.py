@@ -120,6 +120,43 @@ def dialogo_editar_nota(root, habitante, gestor, callback_actualizar):
     ttk.Button(botones_frame, text="Cancelar", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
 
 
+def dialogo_editar_nombre(root, habitante, gestor, callback_actualizar):
+    """Muestra diálogo para editar el nombre de un habitante"""
+    ventana = tk.Toplevel(root)
+    ventana.title(f"Editar Nombre - {habitante['folio']}")
+    ventana.geometry("450x200")
+    ventana.transient(root)
+    ventana.grab_set()
+    
+    ttk.Label(ventana, text=f"Folio: {habitante['folio']}", font=('Arial', 10, 'bold')).pack(pady=10)
+    ttk.Label(ventana, text=f"Nombre actual: {habitante['nombre']}", font=('Arial', 9), 
+             foreground='#666').pack(pady=5)
+    
+    ttk.Label(ventana, text="Nuevo nombre:", font=('Arial', 9)).pack(pady=(15, 5))
+    
+    entry_nombre = ttk.Entry(ventana, width=50, font=('Arial', 10))
+    entry_nombre.pack(padx=20, pady=5)
+    entry_nombre.insert(0, habitante['nombre'])
+    entry_nombre.select_range(0, tk.END)
+    entry_nombre.focus_set()
+    
+    def guardar():
+        nuevo_nombre = entry_nombre.get().strip()
+        from src.modules.censo.censo_operaciones import editar_nombre_habitante
+        
+        if editar_nombre_habitante(habitante['folio'], nuevo_nombre, gestor, callback_actualizar):
+            messagebox.showinfo("Éxito", f"Nombre actualizado correctamente\n\nFolio: {habitante['folio']}\nNuevo nombre: {nuevo_nombre}")
+            ventana.destroy()
+    
+    # Enter para guardar
+    entry_nombre.bind('<Return>', lambda e: guardar())
+    
+    botones = ttk.Frame(ventana)
+    botones.pack(pady=15)
+    ttk.Button(botones, text="Guardar", command=guardar, width=12).pack(side=tk.LEFT, padx=5)
+    ttk.Button(botones, text="Cancelar", command=ventana.destroy, width=12).pack(side=tk.LEFT, padx=5)
+
+
 def mostrar_estadisticas(root, habitantes):
     """Muestra estadísticas generales del censo"""
     dialog = tk.Toplevel(root)

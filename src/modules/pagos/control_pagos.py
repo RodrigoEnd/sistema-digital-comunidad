@@ -148,25 +148,20 @@ class SistemaControlPagos:
     
     def set_usuario(self, usuario, gestor_auth):
         """Configurar usuario autenticado"""
-        print("[SET_USUARIO] Iniciando...")
         self.usuario_actual = usuario
         self.gestor_auth = gestor_auth
         self.permisos_rol = self.gestor_auth.ROLES if self.gestor_auth else {}
-        print(f"[SET_USUARIO] Usuario: {usuario['nombre']}")
         registrar_operacion('LOGIN', 'Usuario inició sesión', 
             {'usuario': usuario['nombre'], 'rol': usuario['rol']}, usuario['nombre'])
         
         # Configurar la interfaz con el usuario establecido
-        print("[SET_USUARIO] Llamando a configurar_interfaz...")
         try:
             self.configurar_interfaz()
-            print("[SET_USUARIO] configurar_interfaz OK")
         except Exception as e:
-            print(f"[SET_USUARIO] ERROR en configurar_interfaz: {e}")
+            registrar_error('control_pagos', 'set_usuario', str(e))
             import traceback
             traceback.print_exc()
             raise
-        print("[SET_USUARIO] Completado")
 
     def _tiene_permiso(self, permiso):
         """Verifica permisos según rol actual"""
@@ -374,10 +369,6 @@ class SistemaControlPagos:
                 # Puede estar en 'usuario' o 'nombre'
                 nombre_usuario = self.usuario_actual.get('usuario') or self.usuario_actual.get('nombre')
                 
-                # Debug: ver qué estamos buscando
-                print(f"[DEBUG] Buscando usuario: {nombre_usuario}")
-                print(f"[DEBUG] Usuario actual completo: {self.usuario_actual}")
-                
                 # Obtener datos del usuario desde la BD
                 usuario_bd = self.bd.obtener_usuario(nombre_usuario)
                 
@@ -387,9 +378,6 @@ class SistemaControlPagos:
                     pass_entry.focus()
                     return
                 
-                print(f"[DEBUG] Hash ingresado: {hash_ingresado}")
-                print(f"[DEBUG] Hash en BD: {usuario_bd.get('contraseña', 'NO_HASH')}")
-                
                 if hash_ingresado == usuario_bd['contraseña']:
                     resultado['success'] = True
                     dialog.destroy()
@@ -398,7 +386,7 @@ class SistemaControlPagos:
                     pass_entry.delete(0, tk.END)
                     pass_entry.focus()
             except Exception as e:
-                print(f"[ERROR] Verificación de contraseña: {e}")
+                registrar_error('control_pagos', 'solicitar_password', str(e))
                 messagebox.showerror("Error", f"Error al verificar contraseña: {str(e)}")
                 pass_entry.delete(0, tk.END)
                 pass_entry.focus()
@@ -523,6 +511,9 @@ class SistemaControlPagos:
         # Aplicar datos de cooperación activa
         self.personas = coop.setdefault('personas', [])
         self.monto_cooperacion = coop.get('monto_cooperacion', self.monto_cooperacion)
+        
+        # SINCRONIZACIÓN: Actualizar nombres desde BD de habitantes
+        self._sincronizar_nombres_desde_bd()
         self.proyecto_actual = coop.get('proyecto', self.proyecto_actual)
         self.cooperacion_actual = coop.get('nombre', 'Cooperacion')
         
@@ -565,15 +556,13 @@ class SistemaControlPagos:
         # Buscar cooperación por nombre
         destino = next((c for c in self.cooperaciones if c.get('nombre') == nombre), None)
         if not destino:
-            print(f"[BUGFIX] No se encontró cooperación: {nombre}")
+            registrar_error('control_pagos', 'cambiar_cooperacion', f'No se encontró cooperación: {nombre}')
             return
         
         # BUGFIX: Solo cambiar si es diferente de la actual
         if self.coop_activa_id == destino.get('id'):
-            print(f"[BUGFIX] Cooperación ya activa: {nombre}")
             return
         
-        print(f"[BUGFIX] Cambiando a cooperación: {nombre}")
         self.coop_activa_id = destino.get('id')
         
         # Sincronización COMPLETA en orden correcto:
@@ -845,7 +834,6 @@ class SistemaControlPagos:
             print("[CONFIGURAR_INTERFAZ] BarraSuperior creada")
         
         # ===== CONTENEDOR PRINCIPAL CON PADDING =====
-        print("[CONFIGURAR_INTERFAZ] Creando content_container...")
         scroll_container = tk.Frame(main_frame, bg=tema_visual['bg_principal'])
         scroll_container.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), 
                               padx=ESPACIADO['lg'], pady=ESPACIADO['lg'])
@@ -1042,23 +1030,18 @@ class SistemaControlPagos:
 
         from src.ui.ui_componentes_extra import SearchBox
         self.search_box = SearchBox(controles_header, placeholder="Buscar por nombre, folio o estado...",
-                        tema=tema_visual, callback=lambda _: self.buscar_tiempo_real())
+                        tema=tema_visual, callback=self.buscar_tiempo_real)
         self.search_box.grid(row=0, column=0, sticky=(tk.W, tk.E), padx=(0, ESPACIADO['md']))
-        # NO agregar binding adicional - SearchBox ya tiene callback optimizado con debouncing
+        # Callback directo sin lambda - SearchBox maneja el debouncing automáticamente
 
         btn_limpiar = BotonModerno(controles_header, f"{ICONOS['cerrar']} Limpiar", tema=tema_visual, tipo='secondary',
                  command=self.limpiar_busqueda)
         btn_limpiar.grid(row=0, column=1, padx=(0, ESPACIADO['sm']))
         TooltipModerno(btn_limpiar, "Limpiar búsqueda y mostrar todas las personas", tema_visual)
-        
-        btn_busqueda_avanzada = BotonModerno(controles_header, f"{ICONOS['filtrar']} Búsqueda Avanzada", tema=tema_visual, tipo='ghost',
-                 command=self.abrir_busqueda_avanzada)
-        btn_busqueda_avanzada.grid(row=0, column=2, padx=(0, ESPACIADO['sm']))
-        TooltipModerno(btn_busqueda_avanzada, "Buscar usando criterios avanzados (monto, estado, etc.)", tema_visual)
 
         # Controles de visibilidad y ordenamiento integrados al header
         checks_container = tk.Frame(controles_header, bg=tema_visual.get('card_bg', tema_visual['bg_secundario']))
-        checks_container.grid(row=0, column=3, padx=(ESPACIADO['md'], 0))
+        checks_container.grid(row=0, column=2, padx=(ESPACIADO['md'], 0))
         ttk.Checkbutton(checks_container, text="Mostrar folio", variable=self.folio_visible,
                 command=self.actualizar_visibilidad_columnas).pack(side=tk.LEFT, padx=(0, ESPACIADO['sm']))
         ttk.Checkbutton(checks_container, text="Mostrar nombre", variable=self.nombre_visible,
@@ -1192,6 +1175,7 @@ class SistemaControlPagos:
                         borderwidth=1, relief=tk.FLAT)
         self.menu_persona.add_command(label=f"{ICONOS['editar']} Editar persona", command=self.editar_persona)
         self.menu_persona.add_command(label=f"{ICONOS['dinero']} Registrar pago", command=self.registrar_pago)
+        self.menu_persona.add_command(label=f"{ICONOS['advertencia']} Anular pago", command=self.anular_pago)
         self.menu_persona.add_command(label=f"{ICONOS['eliminar']} Eliminar", command=self.eliminar_persona)
         self.menu_persona.add_separator()
         self.menu_persona.add_command(label=f"{ICONOS['reporte']} Ver historial", command=self.ver_historial_completo)
@@ -1273,7 +1257,7 @@ class SistemaControlPagos:
         self.tabla_fullscreen = not self.tabla_fullscreen
         
         if self.tabla_fullscreen:
-            # Ocultar otros paneles
+            # Ocultar otros paneles y expandir tabla
             if hasattr(self, 'info_panel') and self.info_panel.winfo_ismapped():
                 self.info_panel.grid_remove()
             if hasattr(self, 'actions_panel') and self.actions_panel.winfo_ismapped():
@@ -1283,14 +1267,31 @@ class SistemaControlPagos:
             # Ocultar barra superior para ganar más espacio
             if hasattr(self, 'barra_superior') and self.barra_superior.frame.winfo_ismapped():
                 self.barra_superior.frame.grid_remove()
+            
+            # Hacer que la tabla ocupe toda la pantalla
+            if hasattr(self, 'table_panel'):
+                self.table_panel.grid(row=0, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S))
+                # Asegurar que el contenedor se expanda completamente
+                if hasattr(self, 'content_container'):
+                    self.content_container.columnconfigure(0, weight=1)
+                    self.content_container.rowconfigure(0, weight=0)  # info panel
+                    self.content_container.rowconfigure(1, weight=0)  # actions panel
+                    self.content_container.rowconfigure(2, weight=1)  # tabla - peso 1 para expandir
         else:
-            # Mostrar paneles nuevamente
+            # Restaurar vista normal
             if hasattr(self, 'info_panel'):
                 self.info_panel.grid(row=0, column=0, columnspan=2, sticky=(tk.W, tk.E))
             if hasattr(self, 'actions_panel'):
                 self.actions_panel.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E))
             if hasattr(self, 'barra_superior'):
                 self.barra_superior.frame.grid(row=0, column=0, sticky=(tk.W, tk.E))
+            
+            # Restaurar configuración normal de la tabla
+            if hasattr(self, 'table_panel'):
+                self.table_panel.grid(row=2, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S))
+                # Restaurar pesos originales
+                if hasattr(self, 'content_container'):
+                    self.content_container.rowconfigure(2, weight=1)
         
     def sincronizar_con_censo(self, nombre):
         """Sincronizar persona con la base de datos de censo - buscar/crear folio permanente"""
@@ -1299,32 +1300,26 @@ class SistemaControlPagos:
             nombre_lower = nombre.lower().strip()
             for persona in self.personas:
                 if persona['nombre'].lower().strip() == nombre_lower:
-                    print(f"[CENSO] Persona ya existe en pagos: {nombre}")
                     return persona.get('folio')
             
             # Buscar en censo usando gestor
             habitante = self.gestor.obtener_habitante_por_nombre(nombre)
             if habitante:
                 folio = habitante['folio']
-                print(f"[CENSO] Encontrado en censo - Folio: {folio}")
                 return folio
             
             # Si no existe, crear en censo
-            print(f"[CENSO] Agregando '{nombre}' al censo...")
             habitante, mensaje = self.gestor.agregar_habitante(nombre)
             
             if habitante:
                 folio = habitante['folio']
-                print(f"[CENSO] Habitante agregado - Folio: {folio}")
                 return folio
             else:
-                print(f"[CENSO] Error al agregar: {mensaje}")
+                registrar_error('control_pagos', 'sincronizar_con_censo', f'Error al agregar: {mensaje}')
                 return None
                 
         except Exception as e:
-            print(f"[CENSO] Error en sincronizar_con_censo: {e}")
-            import traceback
-            traceback.print_exc()
+            registrar_error('control_pagos', 'sincronizar_con_censo', str(e))
             return None
 
     def generar_folio_local(self):
@@ -1482,6 +1477,7 @@ class SistemaControlPagos:
             gestor_historial=self.gestor_historial,
             usuario_actual=self.usuario_actual,
             tema_global=self.tema_global,
+            gestor_global=self.gestor,  # Pasar gestor global para sincronización
             callback_ok=on_persona_editada
         )
     
@@ -1505,7 +1501,8 @@ class SistemaControlPagos:
             return
         
         # MEJORA 6: Usar confirmación mejorada con más información
-        monto_pagado = sum(pago['monto'] for pago in persona.get('pagos', []))
+        # Excluir pagos anulados del cálculo
+        monto_pagado = sum(pago['monto'] for pago in persona.get('pagos', []) if not pago.get('anulado', False))
         monto_esperado = persona.get('monto_esperado', 100)
         
         if ConfirmacionMejorada.confirmar_eliminacion(
@@ -1604,6 +1601,90 @@ class SistemaControlPagos:
             tema_global=self.tema_global
         )
     
+    def anular_pago(self):
+        """Anular un pago existente con autenticación por contraseña"""
+        if not self._tiene_permiso('pagar'):  # Requerir mismo permiso que registrar
+            return
+        
+        seleccion = self.tree.selection()
+        if not seleccion:
+            messagebox.showwarning("Advertencia", "Por favor seleccione una persona")
+            return
+        
+        item = seleccion[0]
+        persona = self.tree_persona_map.get(item)
+        if not persona:
+            messagebox.showerror("Error", "No se pudo localizar la persona seleccionada")
+            return
+        
+        # Verificar que haya pagos
+        if not persona.get('pagos'):
+            messagebox.showinfo("Información", "Esta persona no tiene pagos registrados")
+            return
+        
+        # Callback para cuando se anule el pago exitosamente
+        def on_pago_anulado(persona, monto_anulado, nuevo_total):
+            # Refrescar datos y UI
+            self.actualizar_totales()
+            self.guardar_datos(mostrar_alerta=False)
+            self.actualizar_tabla()
+            
+            # Visual feedback: animar la fila
+            try:
+                new_item = self._persona_iid(persona)
+                if self.tree.exists(new_item):
+                    self.animar_fila_anulada(new_item)
+            except Exception as anim_err:
+                registrar_error('control_pagos', 'animar_fila_anulada', str(anim_err))
+        
+        # Mostrar diálogo de anulación
+        from src.modules.pagos.pagos_dialogos import DialogoAnularPago
+        
+        DialogoAnularPago.mostrar(
+            parent=self.root,
+            persona=persona,
+            gestor_auth=self.gestor_auth,
+            gestor_historial=self.gestor_historial,
+            usuario_actual=self.usuario_actual,
+            callback_ok=on_pago_anulado,
+            cooperacion_actual=self.cooperacion_actual,
+            tema_global=self.tema_global
+        )
+    
+    def animar_fila_anulada(self, item):
+        """Animar la fila con pulso naranja cuando se anula un pago"""
+        tema_visual = self.obtener_colores()
+        
+        def pulso(idx=0):
+            if idx < 4:
+                # Cambiar color durante animación
+                color_actual = tema_visual['warning'] if idx % 2 == 0 else tema_visual['fg_principal']
+                self.tree.item(item, tags=('anulacion_' + str(idx),))
+                self.tree.tag_configure('anulacion_' + str(idx), foreground=color_actual)
+                self.root.after(200, lambda: pulso(idx + 1))
+            else:
+                # Restaurar color basado en estado actual
+                persona = self.tree_persona_map.get(item)
+                if not persona:
+                    return
+                
+                total_pagado = sum(p['monto'] for p in persona.get('pagos', []) if not p.get('anulado', False))
+                monto_esperado = persona.get('monto_esperado', 100)
+                
+                from src.modules.pagos.pagos_estado import GestorEstadoPago
+                estado_clave = GestorEstadoPago.obtener_estado(total_pagado, monto_esperado)
+                
+                tag_estado_map = {
+                    'completado': 'pagado',
+                    'excedente': 'pagado',
+                    'parcial': 'parcial',
+                    'pendiente': 'pendiente'
+                }
+                tag = tag_estado_map.get(estado_clave, 'pendiente')
+                self.tree.item(item, tags=(tag,))
+        
+        pulso()
+    
     def animar_fila_pagada(self, item, tipo='completado'):
         """Animar la fila con pulso de color - BUG FIX #1: Usa GestorEstadoPago"""
         from src.modules.pagos.pagos_estado import GestorEstadoPago
@@ -1654,26 +1735,9 @@ class SistemaControlPagos:
         DialogoVerHistorial.mostrar(self.root, persona)
     
     def buscar_tiempo_real(self):
-        """Búsqueda en tiempo real optimizada con debounce de 500ms"""
-        from src.core.optimizador_ui import get_ui_optimizer
-        from src.config import UI_DEBOUNCE_SEARCH
-        
-        # Obtener optimizador (solo una vez)
-        if not hasattr(self, '_optimizer'):
-            self._optimizer = get_ui_optimizer()
-        
-        # Usar debouncing - cancela búsquedas anteriores automáticamente
-        self._optimizer.debounce.debounce(
-            f"pagos_search_{id(self)}",
-            UI_DEBOUNCE_SEARCH,
-            self._ejecutar_busqueda
-        )
-    
-    def _ejecutar_busqueda(self):
-        """Ejecuta la búsqueda real después del debounce"""
-        self._timer_busqueda = None
+        """Búsqueda en tiempo real - llamada directamente por SearchBox con debounce"""
+        # SearchBox ya maneja el debouncing, solo ejecutar la búsqueda
         self.actualizar_tabla()
-        # Actualizar contador de resultados
         self._actualizar_contador_resultados()
     
     def _actualizar_contador_resultados(self):
@@ -1743,7 +1807,8 @@ class SistemaControlPagos:
                 persona['nombre'] = 'SIN-NOMBRE'
             
             monto_esperado = persona['monto_esperado']
-            total_pagado = sum(pago['monto'] for pago in persona['pagos'])
+            # Excluir pagos anulados del total
+            total_pagado = sum(pago['monto'] for pago in persona['pagos'] if not pago.get('anulado', False))
             pendiente = max(0, monto_esperado - total_pagado)
             
             # BUG FIX #1 y #4: Usar GestorEstadoPago centralizado para determinar estado
@@ -1868,7 +1933,8 @@ class SistemaControlPagos:
         # Función para obtener valor de ordenamiento
         def get_sort_key(persona):
             monto_esperado = persona.get('monto_esperado', 100)
-            pagado = sum(pago['monto'] for pago in persona.get('pagos', []))
+            # Excluir pagos anulados
+            pagado = sum(pago['monto'] for pago in persona.get('pagos', []) if not pago.get('anulado', False))
             pendiente = max(0, monto_esperado - pagado)
             
             if col_name == 'folio':
@@ -1967,7 +2033,8 @@ class SistemaControlPagos:
         
         for persona in self.personas:
             monto_esperado = persona.get('monto_esperado', persona.get('monto', 100))
-            pagado = sum(pago['monto'] for pago in persona.get('pagos', []))
+            # Excluir pagos anulados
+            pagado = sum(pago['monto'] for pago in persona.get('pagos', []) if not pago.get('anulado', False))
             pendiente = max(0, monto_esperado - pagado)
             
             total_pagado += pagado
@@ -2030,7 +2097,7 @@ class SistemaControlPagos:
             return
         except Exception as e:
             # Cualquier otro error, registrar y no reprogramar
-            print(f"[ADVERTENCIA] Error en actualizar_estado_barra: {e}")
+            registrar_error('control_pagos', 'actualizar_estado_barra', str(e))
             return
         
         # Reprogramar siguiente actualización SOLO si el widget sigue vivo
@@ -2106,7 +2173,7 @@ class SistemaControlPagos:
                 self.cooperaciones = [nueva]
                 self.coop_activa_id = nueva['id']
         except Exception as e:
-            print(f"Error al cargar datos: {str(e)}")
+            registrar_error('control_pagos', 'cargar_datos', str(e))
     
     def exportar_excel(self):
         """Exportar cooperación actual a Excel"""
@@ -2171,23 +2238,6 @@ class SistemaControlPagos:
             registrar_error('CREAR_BACKUP', str(e))
             messagebox.showerror("Error", f"Error al crear backup: {str(e)}")
     
-    def abrir_busqueda_avanzada(self):
-        """Abrir ventana de búsqueda avanzada"""
-        if not self.personas:
-            messagebox.showinfo("Información", "No hay personas para buscar")
-            return
-        
-        from src.ui.ventana_busqueda import VentanaBusquedaAvanzada
-        VentanaBusquedaAvanzada(self.root, self.personas, self.seleccionar_persona_busqueda)
-    
-    def seleccionar_persona_busqueda(self, persona):
-        """Callback cuando se selecciona una persona en la búsqueda"""
-        # Seleccionar el iid asociado en el tree
-        iid = self._persona_iid(persona)
-        if self.tree.exists(iid):
-            self.tree.selection_set(iid)
-            self.tree.see(iid)
-    
     def ver_historial_completo(self):
         """Abrir ventana de historial completo"""
         from src.modules.historial.ventana_historial import VentanaHistorial
@@ -2217,6 +2267,24 @@ class SistemaControlPagos:
         
         except Exception as e:
             registrar_error('control_pagos', '_auditar_coherencia_inicial', str(e))
+    
+    def _sincronizar_nombres_desde_bd(self):
+        """Sincroniza los nombres de personas con la BD de habitantes"""
+        try:
+            sincronizados = 0
+            for persona in self.personas:
+                folio = persona.get('folio', '')
+                if folio:
+                    habitante = self.gestor.obtener_habitante_por_folio(folio)
+                    if habitante and habitante['nombre'] != persona['nombre']:
+                        persona['nombre'] = habitante['nombre']
+                        sincronizados += 1
+            
+            if sincronizados > 0:
+                # Guardar cambios sincronizados
+                self.guardar_datos(mostrar_alerta=False, inmediato=True)
+        except Exception as e:
+            registrar_error('control_pagos', '_sincronizar_nombres_desde_bd', str(e))
     
     def cerrar_aplicacion(self):
         """Cerrar aplicación con backup automático silencioso"""

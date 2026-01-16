@@ -170,32 +170,51 @@ class SearchBox(tk.Frame):
     
     def _on_focus_in(self, event):
         """Evento focus in"""
-        self._remove_placeholder()
+        # Si tiene placeholder, limpiarlo
+        if self.has_placeholder:
+            self.entry.delete(0, tk.END)
+            self.entry.config(fg=self.tema['fg_principal'])
+            self.has_placeholder = False
         self.config(highlightbackground=self.tema['accent_primary'], highlightthickness=2)
     
     def _on_focus_out(self, event):
         """Evento focus out"""
         texto_actual = self.entry.get().strip()
-        if not texto_actual:
+        # Solo poner placeholder si está realmente vacío o es el placeholder mismo
+        if not texto_actual or texto_actual == self.placeholder:
             self._set_placeholder()
+        else:
+            # Hay contenido válido, asegurar que no está marcado como placeholder
+            self.has_placeholder = False
         self.config(highlightbackground=self.tema['border'], highlightthickness=1)
     
     def _on_key_release(self, event):
         """Evento tecla liberada con debouncing automático"""
+        # Si hay placeholder, verificar si el usuario empezó a escribir
+        texto_actual = self.entry.get()
+        
+        # Si el texto ya no es el placeholder, marcar que no hay placeholder
+        if self.has_placeholder and texto_actual != self.placeholder:
+            self.has_placeholder = False
+            self.entry.config(fg=self.tema['fg_principal'])
+        
+        # Ejecutar callback si hay y no es placeholder
         if self.callback and not self.has_placeholder:
-            # Usar optimizador para debouncing automático
+            # El callback debe obtener el valor por sí mismo usando self.search_box.get()
             self._optimizer.debounce_search(
                 self._widget_id,
                 self.debounce_ms,
                 self.callback,
-                self.get()
+                None  # No pasar valor, el callback lo obtiene
             )
     
     def get(self):
-        """Obtener valor"""
-        if self.has_placeholder:
+        """Obtener valor real, nunca el placeholder"""
+        texto = self.entry.get().strip()
+        # Si el texto es el placeholder o está marcado como tal, retornar vacío
+        if self.has_placeholder or texto == self.placeholder:
             return ""
-        return self.entry.get().strip()
+        return texto
     
     def set(self, valor):
         """Establecer valor"""
@@ -207,7 +226,8 @@ class SearchBox(tk.Frame):
             self._set_placeholder()
     
     def clear(self):
-        """Limpiar el contenido"""
+        """Limpiar el contenido completamente"""
+        self.has_placeholder = False  # Resetear flag primero
         self.entry.delete(0, tk.END)
         self._set_placeholder()
 

@@ -58,24 +58,27 @@ class GestorPersonas:
         
         return persona
     
-    def editar_persona(self, folio, nombre=None, notas=None, monto_esperado=None):
-        """Editar datos de una persona"""
+    def editar_persona(self, folio, nombre=None, notas=None, monto_esperado=None, gestor_global=None):
+        """Editar datos de una persona y sincronizar con la base de datos de habitantes"""
         persona = self.obtener_persona_por_folio(folio)
         if not persona:
             raise ValueError(f"Persona con folio {folio} no encontrada")
         
         cambios = {}
+        cambios_bd = {}  # Cambios para sincronizar con BD de habitantes
         
         if nombre is not None:
             validar_nombre(nombre)
             cambios['nombre_anterior'] = persona['nombre']
             persona['nombre'] = nombre.strip()
             cambios['nombre_nuevo'] = nombre.strip()
+            cambios_bd['nombre'] = nombre.strip()  # Sincronizar con BD
         
         if notas is not None:
             cambios['notas_anterior'] = persona.get('notas')
             persona['notas'] = notas.strip()
             cambios['notas_nuevas'] = notas.strip()
+            cambios_bd['nota'] = notas.strip()  # Sincronizar con BD
         
         if monto_esperado is not None:
             validar_monto(monto_esperado)
@@ -84,6 +87,17 @@ class GestorPersonas:
             cambios['monto_nuevo'] = monto_esperado
         
         persona['fecha_modificacion'] = datetime.now().strftime(PATRONES['datetime_formato'])
+        
+        # Sincronizar con la base de datos de habitantes si hay cambios
+        if cambios_bd and gestor_global:
+            try:
+                exito, mensaje = gestor_global.actualizar_habitante(folio, **cambios_bd)
+                if exito:
+                    print(f"[GestorPersonas] Habitante sincronizado: {folio}")
+                else:
+                    print(f"[GestorPersonas] Advertencia al sincronizar: {mensaje}")
+            except Exception as e:
+                print(f"[GestorPersonas] Error sincronizando con BD: {e}")
         
         if cambios:
             registrar_operacion(

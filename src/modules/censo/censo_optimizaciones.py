@@ -6,7 +6,7 @@ Reemplazan las funciones originales para evitar congelamiento con grandes volúm
 import threading
 import tkinter as tk
 from src.core.logger import registrar_error
-from src.config import CENSO_NOTA_MAX_DISPLAY
+from src.config import CENSO_NOTA_MAX_DISPLAY, CENSO_BATCH_INSERT_SIZE, CENSO_UPDATE_UI_EVERY_N
 
 
 def cargar_habitantes_async(self):
@@ -52,12 +52,12 @@ def _finalizar_carga_async(self, habitantes):
 
 
 def actualizar_tabla_incremental(self, habitantes):
-    """Actualizar tabla de forma rápida sin bloquear UI"""
+    """Actualizar tabla de forma rápida sin bloquear UI con optimización por lotes"""
     try:
         if not hasattr(self, 'tree'):
             return
         
-        # Deshabilitar redibujado temporal
+        # Prevenir actualizaciones visuales durante la modificación
         self.tree.configure(takefocus=False)
         
         # Limpiar tabla rápidamente
@@ -65,31 +65,46 @@ def actualizar_tabla_incremental(self, habitantes):
         if items:
             self.tree.delete(*items)
         
-        # Insertar directamente sin lotes - más rápido para <1000 items
+        # Optimización: Preparar datos primero, insertar después
+        datos_preparados = []
         for hab in habitantes:
             activo = hab.get('activo', True)
             estado_icono = "● Activo" if activo else "● Inactivo"
             tag = 'activo' if activo else 'inactivo'
             nota = hab.get('nota', '')
             
-            self.tree.insert('', tk.END,
-                           values=(hab['folio'],
-                                  hab['nombre'],
-                                  hab.get('fecha_registro', ''),
-                                  estado_icono,
-                                  nota[:CENSO_NOTA_MAX_DISPLAY] + '...' if len(nota) > CENSO_NOTA_MAX_DISPLAY else nota),
-                           tags=(tag,))
+            datos_preparados.append({
+                'values': (
+                    hab['folio'],
+                    hab['nombre'],
+                    hab.get('fecha_registro', ''),
+                    estado_icono,
+                    nota[:CENSO_NOTA_MAX_DISPLAY] + '...' if len(nota) > CENSO_NOTA_MAX_DISPLAY else nota
+                ),
+                'tags': (tag,)
+            })
+        
+        # Insertar en lotes de 100 para evitar lag
+        BATCH_SIZE = CENSO_BATCH_INSERT_SIZE
+        for i in range(0, len(datos_preparados), BATCH_SIZE):
+            batch = datos_preparados[i:i+BATCH_SIZE]
+            for item in batch:
+                self.tree.insert('', tk.END, values=item['values'], tags=item['tags'])
+            
+            # Permitir que la UI responda cada cierto número de lotes
+            if i > 0 and i % (CENSO_UPDATE_UI_EVERY_N * 6) == 0:  # 300 items
+                self.tree.update_idletasks()
         
         # Reactivar redibujado
         self.tree.configure(takefocus=True)
         
-        # Actualizar contadores
+        # Actualizar contadores de forma asíncrona
         if hasattr(self, 'total_label'):
             self.total_label.config(text=f"Total Habitantes: {len(habitantes)}")
-        if hasattr(self, '_actualizar_indicadores_estado'):
-            self._actualizar_indicadores_estado()
-        if hasattr(self, '_actualizar_barra_estado'):
-            self._actualizar_barra_estado()
+        
+        # Actualizar indicadores y barra de estado de forma asíncrona (no bloquear)
+        if hasattr(self, 'root'):
+            self.root.after_idle(self._actualizar_indicadores_y_barra_async)
         
     except Exception as e:
         print(f"Error actualizando tabla: {e}")

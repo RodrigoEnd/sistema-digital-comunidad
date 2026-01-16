@@ -95,8 +95,8 @@ class BaseDatos:
             self.cargar_datos()
         return exito, mensaje
     
-    def actualizar_habitante(self, folio, cambios):
-        """Actualizar habitante por folio"""
+    def actualizar_habitante(self, folio, **cambios):
+        """Actualizar habitante por folio - acepta kwargs"""
         exito, mensaje = self.bd.actualizar_habitante(folio, **cambios)
         if exito:
             self.cargar_datos()

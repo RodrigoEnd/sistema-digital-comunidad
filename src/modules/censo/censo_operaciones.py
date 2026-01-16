@@ -196,3 +196,39 @@ def colocar_nota_habitante(folio, nota, gestor, callback_exito=None):
         messagebox.showerror("Error", f"No se pudo guardar: {e}")
         registrar_error('censo_operaciones', 'colocar_nota_habitante', str(e), contexto=f"folio={folio}")
         return False
+
+
+def editar_nombre_habitante(folio, nuevo_nombre, gestor, callback_exito=None):
+    """
+    Actualiza el nombre de un habitante
+    
+    Args:
+        folio: Folio del habitante
+        nuevo_nombre: Nuevo nombre completo
+        gestor: Instancia del gestor
+        callback_exito: Función a ejecutar si es exitoso
+    """
+    try:
+        if not nuevo_nombre or len(nuevo_nombre.strip()) < 3:
+            messagebox.showerror("Error", "El nombre debe tener al menos 3 caracteres")
+            return False
+        
+        exito, mensaje = gestor.actualizar_habitante(folio, nombre=nuevo_nombre.strip())
+        
+        if exito:
+            registrar_operacion(
+                'CENSO',
+                'Nombre actualizado',
+                {'folio': folio, 'nuevo_nombre': nuevo_nombre}
+            )
+            if callback_exito:
+                callback_exito()
+            return True
+        else:
+            messagebox.showerror("Error", mensaje)
+            return False
+    
+    except Exception as e:
+        messagebox.showerror("Error", f"No se pudo actualizar el nombre: {str(e)}")
+        registrar_error('censo_operaciones', 'editar_nombre_habitante', str(e), contexto=f"folio={folio}")
+        return False

@@ -30,7 +30,7 @@ from src.modules.indicadores.indicadores_estado import calcular_estado_habitante
 # Imports de módulos internos del censo
 from src.modules.censo.censo_dialogos import agregar_habitante, dialogo_editar_nota, mostrar_estadisticas, mostrar_historial, busqueda_avanzada
 from src.modules.censo.censo_panel_detalles import CensoPanelDetalles
-from src.modules.censo.censo_operaciones import aplicar_filtros, ordenar_columna, actualizar_estado_habitante, colocar_nota_habitante
+from src.modules.censo.censo_operaciones import aplicar_filtros, ordenar_columna, actualizar_estado_habitante, colocar_nota_habitante, editar_nombre_habitante
 from src.modules.censo.censo_exportacion import exportar_excel
 from src.modules.censo.censo_preferencias import cargar_preferencias, guardar_preferencias, aplicar_preferencias
 from src.modules.censo.censo_tooltips import configurar_tooltips, mostrar_tooltip_indicador, ocultar_tooltip_indicador
@@ -68,8 +68,7 @@ class SistemaCensoHabitantes:
         # Tamaño y posición optimizados
         self.root.geometry("1400x800")
         
-        # Centrar ventana en pantalla
-        self.root.update_idletasks()
+        # Centrar ventana en pantalla (sin update_idletasks para mejor rendimiento)
         x = (self.root.winfo_screenwidth() // 2) - (1400 // 2)
         y = (self.root.winfo_screenheight() // 2) - (800 // 2)
         self.root.geometry(f"1400x800+{x}+{y}")
@@ -146,6 +145,7 @@ class SistemaCensoHabitantes:
         self.style.configure('Treeview.Heading', 
                            background=colores['table_header'], 
                            foreground=colores['table_header_text'], 
+                           relief='flat',  # Flat para mejor rendimiento
                            padding=6)
 
     def _inicializar_datos(self):
@@ -154,7 +154,7 @@ class SistemaCensoHabitantes:
             print("[Censo] Cargando habitantes desde gestor...")
             
             # Cargar en segundo plano para no bloquear UI
-            self.root.after(100, self._cargar_datos_asincrono)
+            self.root.after_idle(self._cargar_datos_asincrono)
             
         except Exception as e:
             print(f"[Censo] Error en inicialización: {e}")
@@ -279,8 +279,8 @@ class SistemaCensoHabitantes:
         self.search_var = tk.StringVar()
         search_entry = ttk.Entry(toolbar, textvariable=self.search_var, width=35)
         search_entry.grid(row=0, column=1, sticky=(tk.W, tk.E), padx=(0, 10))
-        # Binding optimizado con KeyRelease solo (sin trace que se ejecuta demasiado)
-        search_entry.bind('<KeyRelease>', lambda e: self._buscar_tiempo_real())
+        # Solo activar búsqueda después de 300ms de inactividad
+        self.search_var.trace('w', lambda *args: self._buscar_tiempo_real())
 
         # Filtro de estado
         ttk.Label(toolbar, text="Filtrar:").grid(row=0, column=2, sticky=tk.W, padx=(10,5))
@@ -312,13 +312,15 @@ class SistemaCensoHabitantes:
         scrollbar_y = ttk.Scrollbar(table_frame, orient=tk.VERTICAL)
         scrollbar_x = ttk.Scrollbar(table_frame, orient=tk.HORIZONTAL)
         
-        # Treeview (optimizado: sin columna de icono)
+        # Treeview (optimizado: sin columna de icono, con displaycolumns para mejor rendimiento)
         self.tree = ttk.Treeview(table_frame, 
                                  columns=CENSO_COLUMNAS,
                                  show='headings',  # Solo encabezados, sin columna de ícono
+                                 displaycolumns=CENSO_COLUMNAS,  # Especificar explícitamente
                                  yscrollcommand=scrollbar_y.set,
                                  xscrollcommand=scrollbar_x.set,
-                                 selectmode='browse')  # Modo de selección optimizado
+                                 selectmode='browse',  # Modo de selección optimizado
+                                 height=20)  # Altura fija para mejor rendimiento
         
         # Configurar encabezados
         self.tree.heading('folio', text='Folio', command=lambda: self._ordenar_columna('folio'))
@@ -343,6 +345,8 @@ class SistemaCensoHabitantes:
 
         # Menú contextual
         self.menu_contextual = tk.Menu(self.root, tearoff=0)
+        self.menu_contextual.add_command(label="✏️  Editar Nombre", command=self._editar_nombre_seleccion)
+        self.menu_contextual.add_separator()
         self.menu_contextual.add_command(label="Marcar como activo", command=lambda: self._actualizar_estado_seleccion(True))
         self.menu_contextual.add_command(label="Marcar como inactivo", command=lambda: self._actualizar_estado_seleccion(False))
         self.menu_contextual.add_separator()
@@ -398,6 +402,13 @@ class SistemaCensoHabitantes:
         """Actualizar tabla con lista de habitantes (optimizado)"""
         actualizar_tabla_incremental(self, habitantes)
     
+    def _actualizar_indicadores_y_barra_async(self):
+        """Actualiza indicadores y barra de estado de forma asíncrona para no bloquear"""
+        if hasattr(self, '_actualizar_indicadores_estado'):
+            self._actualizar_indicadores_estado()
+        if hasattr(self, '_actualizar_barra_estado'):
+            self._actualizar_barra_estado()
+    
     def _actualizar_barra_estado(self):
         """Actualiza la barra de estado inferior"""
         try:
@@ -436,10 +447,10 @@ class SistemaCensoHabitantes:
         # Cancelar búsquedas anteriores
         self._optimizer.debounce.cancel(f"censo_search_{id(self)}")
         
-        # Programar nueva búsqueda con debounce
+        # Programar nueva búsqueda con debounce (300ms)
         self._optimizer.debounce.debounce(
             f"censo_search_{id(self)}",
-            UI_DEBOUNCE_SEARCH,
+            300,  # Reducido de 500ms a 300ms para mejor respuesta
             self._ejecutar_busqueda_async,
             criterio,
             filtro
@@ -485,13 +496,16 @@ class SistemaCensoHabitantes:
         )
     
     def _aplicar_filtros_async(self):
-        """Aplica filtros de forma asíncrona para no bloquear UI"""
+        """Aplica filtros de forma asíncrona para no bloquear UI - VERSION OPTIMIZADA"""
+        # Cancelar trabajos previos si existen
+        if self._search_job:
+            self.root.after_cancel(self._search_job)
+            self._search_job = None
+        
+        # Prevenir actualizaciones concurrentes
         if hasattr(self, '_actualizacion_en_progreso') and self._actualizacion_en_progreso:
-            # Ya hay una actualización, programar para después
-            self._search_job = self.root.after(50, self._aplicar_filtros_async)
             return
         
-        self._search_job = None
         self._cancelar_busqueda = False
         self._actualizacion_en_progreso = True
         
@@ -616,6 +630,18 @@ class SistemaCensoHabitantes:
         """Edita la nota del habitante seleccionado"""
         dialogo_editar_nota(self.root, habitante, self.gestor, self.cargar_habitantes)
     
+    def _editar_nombre_seleccion(self):
+        """Edita el nombre del habitante seleccionado"""
+        folio = self.__folio_seleccionado()
+        if not folio:
+            messagebox.showwarning("Selección", "Selecciona un habitante primero")
+            return
+        
+        habitante = next((h for h in self.habitantes if h['folio'] == folio), None)
+        if habitante:
+            from src.modules.censo.censo_dialogos import dialogo_editar_nombre
+            dialogo_editar_nombre(self.root, habitante, self.gestor, self.cargar_habitantes)
+    
     def _cambiar_estado_seleccionado(self, folio, activo):
         """Cambia el estado del habitante"""
         # Pedir confirmación solo al marcar como inactivo
@@ -708,30 +734,40 @@ class SistemaCensoHabitantes:
     # ===== MÉTODOS DE INDICADORES Y TOOLTIPS =====
     
     def _actualizar_indicadores_estado(self):
-        """Actualiza los indicadores de estado de pagos y faenas"""
+        """Actualiza los indicadores de estado de pagos y faenas con caché"""
         try:
             # Protección: verificar que existen los canvas
             if not hasattr(self, 'canvas_pagos') or not hasattr(self, 'canvas_faenas'):
                 return
             
+            # Si ya tenemos valores en caché y no han pasado más de 30 segundos, no recalcular
+            if hasattr(self, '_indicadores_cache_time'):
+                import time
+                if time.time() - self._indicadores_cache_time < 30:
+                    return
+            
             total_pagos = 0.0
             total_faenas = 0.0
-            count = 0
+            count = len(self.habitantes)
             
-            for hab in self.habitantes:
-                folio = hab.get('folio', '')
-                nombre = hab.get('nombre', '')
-                estado = calcular_estado_habitante(folio, nombre)
-                total_pagos += estado['pagos']['ratio']
-                total_faenas += estado['faenas']['ratio']
-                count += 1
-            
-            if count > 0:
-                ratio_pagos_promedio = total_pagos / count
-                ratio_faenas_promedio = total_faenas / count
-            else:
+            if count == 0:
                 ratio_pagos_promedio = 0.5
                 ratio_faenas_promedio = 0.5
+            else:
+                # Optimización: Calcular en lotes de 50 y permitir que UI responda
+                for i, hab in enumerate(self.habitantes):
+                    folio = hab.get('folio', '')
+                    nombre = hab.get('nombre', '')
+                    estado = calcular_estado_habitante(folio, nombre)
+                    total_pagos += estado['pagos']['ratio']
+                    total_faenas += estado['faenas']['ratio']
+                    
+                    # Cada 50 habitantes, permitir que UI responda
+                    if i > 0 and i % 50 == 0:
+                        self.root.update_idletasks()
+                
+                ratio_pagos_promedio = total_pagos / count
+                ratio_faenas_promedio = total_faenas / count
             
             color_pagos = self.__color_por_ratio(ratio_pagos_promedio)
             color_faenas = self.__color_por_ratio(ratio_faenas_promedio)
@@ -744,6 +780,10 @@ class SistemaCensoHabitantes:
             
             self.estado_pagos_promedio = ratio_pagos_promedio
             self.estado_faenas_promedio = ratio_faenas_promedio
+            
+            # Guardar timestamp del caché
+            import time
+            self._indicadores_cache_time = time.time()
         except Exception as e:
             print(f"Error actualizando indicadores: {e}")
     
@@ -761,13 +801,13 @@ class SistemaCensoHabitantes:
             return '#999999'
     
     def _mostrar_tooltip_pagos(self):
-        """Muestra tooltip de pagos"""
+        """Muestra tooltip de pagos usando valores en caché"""
         if hasattr(self, 'estado_pagos_promedio'):
             texto = f"Estado de pagos: {self.estado_pagos_promedio*100:.1f}%"
             self.tooltip_label = mostrar_tooltip_indicador(self.root, texto, 100, 150)
     
     def _mostrar_tooltip_faenas(self):
-        """Muestra tooltip de faenas"""
+        """Muestra tooltip de faenas usando valores en caché"""
         if hasattr(self, 'estado_faenas_promedio'):
             texto = f"Estado de faenas: {self.estado_faenas_promedio*100:.1f}%"
             self.tooltip_label = mostrar_tooltip_indicador(self.root, texto, 100, 150)

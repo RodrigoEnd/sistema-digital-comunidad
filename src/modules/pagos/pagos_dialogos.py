@@ -351,7 +351,7 @@ class DialogoEditarPersona:
     """Diálogo para editar información de una persona existente"""
     
     @staticmethod
-    def mostrar(parent, persona, personas_lista, gestor_historial, usuario_actual, callback_ok, tema_global=None):
+    def mostrar(parent, persona, personas_lista, gestor_historial, usuario_actual, callback_ok, tema_global=None, gestor_global=None):
         """
         Muestra el diálogo para editar una persona
         
@@ -363,6 +363,7 @@ class DialogoEditarPersona:
             usuario_actual: Dict con datos del usuario actual
             callback_ok: Función a llamar cuando se edite exitosamente
             tema_global: Dict con colores del tema visual
+            gestor_global: Gestor de datos global para sincronización
         """
         # Tema por defecto si no se proporciona
         if not tema_global:
@@ -435,6 +436,26 @@ class DialogoEditarPersona:
                 
                 gestor_historial.registrar_cambio('EDITAR', 'PERSONA', 
                     persona.get('folio', 'SIN-FOLIO'), cambios, usuario)
+            
+            # Sincronizar con la base de datos de habitantes
+            if cambios and gestor_global:
+                folio = persona.get('folio', '')
+                if folio:
+                    try:
+                        cambios_bd = {}
+                        if 'nombre' in cambios:
+                            cambios_bd['nombre'] = nombre
+                        if 'notas' in cambios:
+                            cambios_bd['nota'] = notas_entry.get().strip()
+                        
+                        if cambios_bd:
+                            exito, mensaje = gestor_global.actualizar_habitante(folio, **cambios_bd)
+                            if exito:
+                                print(f"[Pagos] Habitante sincronizado: {folio}")
+                            else:
+                                print(f"[Pagos] Advertencia al sincronizar: {mensaje}")
+                    except Exception as e:
+                        print(f"[Pagos] Error sincronizando con BD: {e}")
             
             persona['nombre'] = nombre
             persona['notas'] = notas_entry.get().strip()
@@ -783,7 +804,8 @@ class DialogoVerHistorial:
                  font=('Arial', 10, 'italic')).pack()
         
         monto_esperado = persona.get('monto_esperado', persona.get('monto', 100))
-        total_pagado = sum(pago['monto'] for pago in persona.get('pagos', []))
+        # Excluir pagos anulados del total
+        total_pagado = sum(pago['monto'] for pago in persona.get('pagos', []) if not pago.get('anulado', False))
         
         info_frame = ttk.Frame(dialog)
         info_frame.pack(pady=10, padx=20, fill=tk.X)
@@ -802,7 +824,7 @@ class DialogoVerHistorial:
         scrollbar = ttk.Scrollbar(frame)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         
-        tree_hist = ttk.Treeview(frame, columns=('num', 'monto', 'fecha', 'hora', 'usuario'), 
+        tree_hist = ttk.Treeview(frame, columns=('num', 'monto', 'fecha', 'hora', 'usuario', 'estado'), 
                                  show='headings', yscrollcommand=scrollbar.set)
         
         tree_hist.heading('num', text='#')
@@ -810,25 +832,39 @@ class DialogoVerHistorial:
         tree_hist.heading('fecha', text='Fecha')
         tree_hist.heading('hora', text='Hora')
         tree_hist.heading('usuario', text='Usuario')
+        tree_hist.heading('estado', text='Estado')
         
         tree_hist.column('num', width=50, anchor=tk.CENTER)
         tree_hist.column('monto', width=100, anchor=tk.CENTER)
         tree_hist.column('fecha', width=100, anchor=tk.CENTER)
         tree_hist.column('hora', width=100, anchor=tk.CENTER)
-        tree_hist.column('usuario', width=150, anchor=tk.W)
+        tree_hist.column('usuario', width=120, anchor=tk.W)
+        tree_hist.column('estado', width=100, anchor=tk.CENTER)
         
         tree_hist.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.config(command=tree_hist.yview)
         
         # Llenar datos
         for i, pago in enumerate(persona.get('pagos', []), 1):
-            tree_hist.insert('', tk.END, values=(
+            # Determinar estado
+            anulado = pago.get('anulado', False)
+            estado = '❌ ANULADO' if anulado else '✓ Válido'
+            
+            item_id = tree_hist.insert('', tk.END, values=(
                 i,
                 f"${pago['monto']:.2f}",
                 pago.get('fecha', 'N/A'),
                 pago.get('hora', 'N/A'),
-                pago.get('usuario', 'Sistema')
+                pago.get('usuario', 'Sistema'),
+                estado
             ))
+            
+            # Marcar visualmente los anulados
+            if anulado:
+                tree_hist.item(item_id, tags=('anulado',))
+        
+        # Configurar estilo para pagos anulados
+        tree_hist.tag_configure('anulado', foreground='#999999', font=('Arial', 9, 'italic'))
         
         if not persona.get('pagos'):
             ttk.Label(dialog, text="No hay pagos registrados", 
@@ -839,3 +875,267 @@ class DialogoVerHistorial:
         dialog.wait_window()
 
 
+class DialogoAnularPago:
+    """Diálogo para anular un pago existente con autenticación"""
+    
+    @staticmethod
+    def mostrar(parent, persona, gestor_auth, gestor_historial, usuario_actual, 
+                callback_ok, cooperacion_actual, tema_global):
+        """
+        Muestra el diálogo para anular un pago
+        
+        Args:
+            parent: Ventana padre
+            persona: Dict con datos de la persona
+            gestor_auth: Instancia de GestorAutenticacion para verificar contraseña
+            gestor_historial: Instancia de GestorHistorial
+            usuario_actual: Dict con datos del usuario actual
+            callback_ok: Función a llamar cuando se anule el pago exitosamente
+            cooperacion_actual: Nombre de la cooperación actual
+            tema_global: Tema visual
+            
+        Returns:
+            True si se anuló el pago, False si se canceló
+        """
+        pagos = persona.get('pagos', [])
+        
+        if not pagos:
+            messagebox.showinfo("Información", "Esta persona no tiene pagos registrados para anular")
+            return False
+        
+        # Crear diálogo
+        dialog = tk.Toplevel(parent)
+        dialog.title("Anular Pago")
+        dialog.geometry("600x520")
+        dialog.transient(parent)
+        dialog.grab_set()
+        dialog.configure(bg=tema_global['bg_principal'])
+        
+        # Header con información de la persona
+        header = tk.Frame(dialog, bg=tema_global['bg_secundario'])
+        header.pack(fill=tk.X, padx=14, pady=(14, 10))
+        
+        tk.Label(header, text=ICONOS['advertencia'], font=('Segoe UI', 28),
+                 bg=tema_global['bg_secundario'], fg=tema_global['error']).pack(
+                     side=tk.LEFT, padx=(0, 12))
+        
+        info_text = tk.Frame(header, bg=tema_global['bg_secundario'])
+        info_text.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        tk.Label(info_text, text="Anular Pago", font=FUENTES['titulo'],
+                 bg=tema_global['bg_secundario'], fg=tema_global['fg_principal']).pack(anchor=tk.W)
+        tk.Label(info_text, text=f"{persona['nombre']} - Folio {persona.get('folio', 'SIN-FOLIO')}", 
+                 font=FUENTES['pequeño'],
+                 bg=tema_global['bg_secundario'], fg=tema_global['fg_secundario']).pack(anchor=tk.W)
+        
+        # Advertencia
+        advertencia = tk.Frame(dialog, bg=tema_global['warning'], padx=12, pady=10)
+        advertencia.pack(fill=tk.X, padx=16, pady=(4, 12))
+        
+        tk.Label(advertencia, text="⚠️ Esta acción requiere autenticación y quedará registrada en el historial",
+                 font=FUENTES['pequeño'], bg=tema_global['warning'], fg='#000000',
+                 wraplength=550, justify=tk.LEFT).pack()
+        
+        # Lista de pagos
+        tk.Label(dialog, text="Seleccione el pago a anular:", font=FUENTES['subtitulo'],
+                 bg=tema_global['bg_principal'], fg=tema_global['fg_principal']).pack(
+                     anchor=tk.W, padx=16, pady=(0, 6))
+        
+        # Frame con scrollbar para la tabla de pagos
+        tabla_frame = tk.Frame(dialog, bg=tema_global['bg_principal'])
+        tabla_frame.pack(fill=tk.BOTH, expand=True, padx=16, pady=(0, 12))
+        
+        scrollbar = tk.Scrollbar(tabla_frame)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Treeview para mostrar pagos
+        tree_pagos = ttk.Treeview(tabla_frame, columns=('num', 'monto', 'fecha', 'hora', 'usuario'), 
+                                  show='headings', yscrollcommand=scrollbar.set, height=6)
+        
+        tree_pagos.heading('num', text='#')
+        tree_pagos.heading('monto', text='Monto')
+        tree_pagos.heading('fecha', text='Fecha')
+        tree_pagos.heading('hora', text='Hora')
+        tree_pagos.heading('usuario', text='Usuario')
+        
+        tree_pagos.column('num', width=40, anchor=tk.CENTER)
+        tree_pagos.column('monto', width=100, anchor=tk.CENTER)
+        tree_pagos.column('fecha', width=100, anchor=tk.CENTER)
+        tree_pagos.column('hora', width=100, anchor=tk.CENTER)
+        tree_pagos.column('usuario', width=150, anchor=tk.W)
+        
+        tree_pagos.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.config(command=tree_pagos.yview)
+        
+        # Llenar datos de pagos
+        pago_items = {}  # Mapa de item_id -> índice de pago
+        for i, pago in enumerate(pagos):
+            # Verificar si el pago ya está anulado
+            estado = pago.get('anulado', False)
+            estado_texto = " [ANULADO]" if estado else ""
+            
+            item_id = tree_pagos.insert('', tk.END, values=(
+                i + 1,
+                f"${pago['monto']:.2f}{estado_texto}",
+                pago.get('fecha', 'N/A'),
+                pago.get('hora', 'N/A'),
+                pago.get('usuario', 'Sistema')
+            ))
+            
+            pago_items[item_id] = i
+            
+            # Marcar visualmente los pagos anulados
+            if estado:
+                tree_pagos.item(item_id, tags=('anulado',))
+        
+        tree_pagos.tag_configure('anulado', foreground='#999999', font=FUENTES['pequeño'])
+        
+        # Campo de contraseña
+        tk.Label(dialog, text="Ingrese su contraseña para confirmar:", font=FUENTES['normal'],
+                 bg=tema_global['bg_principal'], fg=tema_global['fg_principal']).pack(
+                     anchor=tk.W, padx=16, pady=(6, 3))
+        
+        password_var = tk.StringVar()
+        password_entry = tk.Entry(dialog, textvariable=password_var, font=FUENTES['normal'], 
+                                  show="●", width=30,
+                                  bg=tema_global['input_bg'], fg=tema_global['fg_principal'],
+                                  relief=tk.SOLID, bd=1, insertbackground=tema_global['accent_primary'])
+        password_entry.pack(anchor=tk.W, padx=16, pady=(0, 10))
+        
+        # Variable para saber si se anuló
+        pago_anulado = {'success': False}
+        
+        def anular_pago_seleccionado(event=None):
+            # Verificar que haya selección
+            seleccion = tree_pagos.selection()
+            if not seleccion:
+                messagebox.showwarning("Advertencia", "Por favor seleccione un pago de la lista")
+                return
+            
+            item_id = seleccion[0]
+            indice_pago = pago_items[item_id]
+            pago = pagos[indice_pago]
+            
+            # Verificar si ya está anulado
+            if pago.get('anulado', False):
+                messagebox.showinfo("Información", "Este pago ya está anulado")
+                return
+            
+            # Verificar contraseña
+            password = password_var.get()
+            if not password:
+                messagebox.showerror("Error", "Debe ingresar su contraseña")
+                password_entry.focus()
+                return
+            
+            # Validar contraseña con el gestor de autenticación
+            if not usuario_actual:
+                messagebox.showerror("Error", "No hay usuario autenticado")
+                return
+            
+            # Verificar contraseña usando el sistema de autenticación
+            import hashlib
+            hash_ingresado = hashlib.sha256(password.encode()).hexdigest()
+            usuario_bd = gestor_auth.bd.obtener_usuario(usuario_actual['nombre'])
+            
+            if not usuario_bd or hash_ingresado != usuario_bd['contraseña']:
+                messagebox.showerror("Error", "Contraseña incorrecta")
+                password_entry.delete(0, tk.END)
+                password_entry.focus()
+                registrar_operacion('ANULAR_PAGO_FALLIDO', 
+                                  f'Intento fallido de anular pago - contraseña incorrecta', {
+                                      'usuario': usuario_actual['nombre'],
+                                      'persona': persona['nombre'],
+                                      'folio': persona.get('folio', 'SIN-FOLIO')
+                                  })
+                return
+            
+            # Confirmar acción
+            if not messagebox.askyesno("Confirmar Anulación", 
+                f"¿Está seguro que desea anular este pago?\n\n"
+                f"Monto: ${pago['monto']:.2f}\n"
+                f"Fecha: {pago.get('fecha', 'N/A')} {pago.get('hora', 'N/A')}\n\n"
+                f"Esta acción quedará registrada en el historial."):
+                return
+            
+            try:
+                # Marcar el pago como anulado (no lo eliminamos)
+                pago['anulado'] = True
+                pago['fecha_anulacion'] = datetime.now().strftime("%d/%m/%Y")
+                pago['hora_anulacion'] = datetime.now().strftime("%H:%M:%S")
+                pago['usuario_anulacion'] = usuario_actual['nombre']
+                pago['motivo_anulacion'] = 'Anulación manual'
+                
+                # Calcular nuevos totales
+                total_pagado_anterior = sum(p['monto'] for p in pagos if not p.get('anulado', False))
+                total_pagado_nuevo = total_pagado_anterior - pago['monto']
+                
+                # Registrar en historial de auditoría
+                cambios_hist = {
+                    'monto_anulado': pago['monto'],
+                    'fecha_pago': pago.get('fecha', 'N/A'),
+                    'total_anterior': total_pagado_anterior,
+                    'total_nuevo': total_pagado_nuevo,
+                    'nombre': persona.get('nombre', ''),
+                    'razon': 'Anulación por error'
+                }
+                gestor_historial.registrar_cambio(
+                    'ANULACION_PAGO',
+                    'PERSONA',
+                    persona.get('folio', 'SIN-FOLIO'),
+                    cambios_hist,
+                    usuario_actual['nombre']
+                )
+                
+                # Registrar en log
+                registrar_operacion('PAGO_ANULADO', 'Pago anulado correctamente', {
+                    'nombre': persona['nombre'],
+                    'folio': persona.get('folio', 'SIN-FOLIO'),
+                    'monto': pago['monto'],
+                    'cooperacion': cooperacion_actual,
+                    'usuario': usuario_actual['nombre']
+                })
+                
+                pago_anulado['success'] = True
+                dialog.destroy()
+                
+                messagebox.showinfo("Éxito", 
+                    f"Pago de ${pago['monto']:.2f} anulado correctamente.\n\n"
+                    f"La operación ha sido registrada en el historial.")
+                
+                # Llamar callback
+                if callback_ok:
+                    callback_ok(persona, pago['monto'], total_pagado_nuevo)
+                
+            except Exception as e:
+                registrar_error('pagos_dialogos', 'DialogoAnularPago.anular_pago', str(e))
+                messagebox.showerror("Error", f"No se pudo anular el pago: {e}")
+        
+        # Botones
+        botones = tk.Frame(dialog, bg=tema_global['bg_principal'])
+        botones.pack(fill=tk.X, pady=18, padx=16)
+        
+        tk.Button(botones, text=f"{ICONOS['eliminar']} Anular Pago", command=anular_pago_seleccionado,
+                  font=FUENTES['botones'], bg=tema_global['error'], fg='#ffffff',
+                  relief=tk.FLAT, padx=16, pady=10, cursor='hand2',
+                  activebackground='#bb2d3b').pack(
+                      side=tk.LEFT, padx=(0, 10), expand=True, fill=tk.X)
+        
+        tk.Button(botones, text=f"{ICONOS['cerrar']} Cancelar", command=dialog.destroy,
+                  font=FUENTES['botones'], bg=tema_global['bg_secundario'], fg=tema_global['fg_principal'],
+                  relief=tk.FLAT, padx=14, pady=10, cursor='hand2',
+                  activebackground=tema_global['bg_tertiary']).pack(side=tk.LEFT, expand=True, fill=tk.X)
+        
+        dialog.bind("<Return>", anular_pago_seleccionado)
+        password_entry.focus()
+        
+        # Centrar diálogo
+        dialog.update_idletasks()
+        x = parent.winfo_x() + (parent.winfo_width() // 2) - (dialog.winfo_width() // 2)
+        y = parent.winfo_y() + (parent.winfo_height() // 2) - (dialog.winfo_height() // 2)
+        dialog.geometry(f"+{x}+{y}")
+        
+        # Esperar a que se cierre
+        dialog.wait_window()
+        
+        return pago_anulado['success']

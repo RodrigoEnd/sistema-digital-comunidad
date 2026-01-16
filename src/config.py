@@ -121,16 +121,16 @@ HORA_FIN_DEFECTO = '1'
 HORA_FIN_AMPM_DEFECTO = 'PM'
 
 # Censo - Constantes de interfaz
-CENSO_DEBOUNCE_MS = 500  # Aumentado para mejor estabilidad
+CENSO_DEBOUNCE_MS = 300  # Reducido para mejor responsividad
 CENSO_NOTA_MAX_DISPLAY = 30
 CENSO_NOMBRES_SIMILARES_MIN_PALABRAS = 2
 CENSO_NOMBRES_SIMILARES_MAX_RESULTADOS = 5
 
 # ===== OPTIMIZACIÓN DE UI =====
 # Tiempos de debounce globales (en milisegundos)
-UI_DEBOUNCE_SEARCH = 500      # Búsqueda en tiempo real
-UI_DEBOUNCE_FILTER = 400       # Filtros
-UI_DEBOUNCE_INPUT = 300        # Input general
+UI_DEBOUNCE_SEARCH = 300       # Búsqueda en tiempo real (reducido para mejor respuesta)
+UI_DEBOUNCE_FILTER = 300       # Filtros
+UI_DEBOUNCE_INPUT = 200        # Input general
 UI_DEBOUNCE_SAVE = 1000        # Guardado automático
 
 # Virtualización de tablas
@@ -143,6 +143,11 @@ UI_CACHE_TTL_SECONDS = 600     # Tiempo de vida del caché (10 min)
 
 # Workers
 UI_MAX_BACKGROUND_WORKERS = 4  # Threads simultáneos máximos
+
+# Censo - Optimizaciones adicionales
+CENSO_BATCH_INSERT_SIZE = 100  # Número de items a insertar por lote
+CENSO_INDICADORES_CACHE_TIME = 30  # Segundos para cachear indicadores
+CENSO_UPDATE_UI_EVERY_N = 50  # Actualizar UI cada N items al procesar
 
 # Censo - Columnas del TreeView
 CENSO_COLUMNAS = ['folio', 'nombre', 'fecha_registro', 'activo', 'nota']
