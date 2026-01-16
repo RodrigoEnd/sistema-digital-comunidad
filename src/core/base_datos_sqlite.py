@@ -224,10 +224,59 @@ class BaseDatosSQLite:
                 ON auditoria(tabla)
             ''')
             
+            # ===== TABLAS PARA COOPERACIONES (Centro de Pagos) =====
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS cooperaciones (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    nombre TEXT NOT NULL UNIQUE,
+                    proyecto TEXT NOT NULL,
+                    monto_cooperacion REAL DEFAULT 300.0,
+                    activa BOOLEAN DEFAULT 1,
+                    fecha_creacion TEXT NOT NULL,
+                    descripcion TEXT
+                )
+            ''')
+            
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS personas_cooperacion (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    cooperacion_id INTEGER NOT NULL,
+                    habitante_id INTEGER NOT NULL,
+                    monto_esperado REAL DEFAULT 300.0,
+                    pagado REAL DEFAULT 0.0,
+                    estado TEXT DEFAULT 'pendiente',
+                    notas TEXT,
+                    fecha_agregado TEXT NOT NULL,
+                    UNIQUE(cooperacion_id, habitante_id),
+                    FOREIGN KEY (cooperacion_id) REFERENCES cooperaciones(id),
+                    FOREIGN KEY (habitante_id) REFERENCES habitantes(id)
+                )
+            ''')
+            
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS pagos_coop (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    persona_coop_id INTEGER NOT NULL,
+                    monto REAL NOT NULL,
+                    fecha_pago TEXT NOT NULL,
+                    hora_pago TEXT,
+                    concepto TEXT,
+                    registrado_por INTEGER,
+                    anulado BOOLEAN DEFAULT 0,
+                    motivo_anulacion TEXT,
+                    fecha_registro TEXT NOT NULL,
+                    FOREIGN KEY (persona_coop_id) REFERENCES personas_cooperacion(id),
+                    FOREIGN KEY (registrado_por) REFERENCES usuarios(id)
+                )
+            ''')
+            
             self.conexion.commit()
             
             # Crear usuario admin si no existe
             self._crear_admin_default()
+            
+            # Crear cooperación inicial si no existe
+            self._crear_cooperacion_initial()
             
             print("[OK] Base de datos SQLite inicializada correctamente")
             
@@ -780,9 +829,30 @@ class BaseDatosSQLite:
         except sqlite3.Error as e:
             registrar_error('BaseDatosSQLite', 'limpiar_auditoria_antigua', str(e))
             return False, f"Error: {str(e)}"
+    
+    def _crear_cooperacion_initial(self):
+        """Crea la cooperación inicial si no existe"""
+        try:
+            cursor = self.conectar().cursor()
+            
+            # Verificar si ya existe
+            cursor.execute("SELECT id FROM cooperaciones WHERE nombre = 'Cooperación General'")
+            if cursor.fetchone():
+                return  # Ya existe
+            
+            # Crear cooperación inicial
+            from datetime import datetime
+            ahora = datetime.now().isoformat()
+            cursor.execute('''
+                INSERT INTO cooperaciones (nombre, proyecto, monto_cooperacion, activa, fecha_creacion)
+                VALUES (?, ?, ?, ?, ?)
+            ''', ('Cooperación General', 'Proyecto General', 300.0, 1, ahora))
+            
+            self.conexion.commit()
+        except:
+            pass  # Silenciar errores en inicialización
 
-
-# Instancia global
+# ==================== INSTANCIA GLOBAL ====================
 _instancia_bd = None
 
 def obtener_bd():

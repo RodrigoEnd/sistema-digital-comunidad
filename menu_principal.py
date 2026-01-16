@@ -16,10 +16,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from src.core.gestor_datos_global import obtener_gestor
 from src.core.optimizacion_rendimiento import optimizar_rendimiento_sistema, configurar_tkinter_rendimiento
 
-# Aplicar optimizaciones de rendimiento al inicio
-print("\n🚀 Aplicando optimizaciones de rendimiento...")
-optimizar_rendimiento_sistema()
-print()
+
+# Control opcional de optimizaciones pesadas (evita bloqueos en arranque)
+HABILITAR_OPTIMIZACION_SISTEMA = os.getenv("OPTIMIZAR_SISTEMA", "0") == "1"
 
 class MenuPrincipal:
     def __init__(self, root):
@@ -46,12 +45,26 @@ class MenuPrincipal:
         
         # Rastrear procesos abiertos
         self.proceso_censo = None
+        self.proceso_pagos = None
+        self.proceso_faenas = None
         self.procesos_externos = []
         
         self.configurar_interfaz()
         
+        # Aplicar optimizaciones de sistema de forma diferida y silenciosa
+        if HABILITAR_OPTIMIZACION_SISTEMA:
+            self.root.after(100, self._aplicar_optimizaciones_sistema)
+        
         # Limpieza al cerrar
         self.root.protocol("WM_DELETE_WINDOW", self.salir)
+
+    def _aplicar_optimizaciones_sistema(self):
+        """Lanza optimizaciones sin bloquear la carga de la UI."""
+        try:
+            optimizar_rendimiento_sistema(silencioso=True, instalar_dependencias=False)
+        except Exception:
+            # Si falla, no bloquea la interfaz ni muestra diálogos
+            pass
     
     def configurar_interfaz(self):
         # Header
@@ -107,14 +120,9 @@ class MenuPrincipal:
         btn_frame = tk.Frame(parent, bg=self.bg_principal)
         btn_frame.pack(fill=tk.X, pady=8)
         
-        # Wrapper para ejecutar comandos de forma no bloqueante
+        # Wrapper ligero para no bloquear el hilo de UI
         def comando_no_bloqueante():
-            self.root.config(cursor="wait")
-            self.root.update()
-            try:
-                comando()
-            finally:
-                self.root.config(cursor="arrow")
+            comando()
         
         btn = tk.Button(btn_frame,
                        text=texto,
@@ -135,80 +143,64 @@ class MenuPrincipal:
         btn.bind('<Leave>', lambda e: e.widget.config(bg=self.bg_boton))
         
         return btn
+
+    def _lanzar_proceso(self, script_path):
+        """Lanza un script Python en ventana oculta en Windows."""
+        if sys.platform == 'win32':
+            pythonw_exe = sys.executable.replace("python.exe", "pythonw.exe")
+            if os.path.exists(pythonw_exe):
+                return subprocess.Popen([pythonw_exe, script_path])
+            CREATE_NO_WINDOW = 0x08000000
+            return subprocess.Popen([sys.executable, script_path], creationflags=CREATE_NO_WINDOW)
+        return subprocess.Popen([sys.executable, script_path])
+
+    def _abrir_modulo_externo(self, attr_nombre, script_relativo, titulo, mensaje_existente, nombre_modulo=None):
+        """Controla apertura de módulos evitando instancias duplicadas."""
+        nombre_modulo = nombre_modulo or titulo
+        proceso = getattr(self, attr_nombre)
+        if proceso is not None:
+            if proceso.poll() is None:
+                messagebox.showinfo(titulo, mensaje_existente)
+                return
+            setattr(self, attr_nombre, None)
+        try:
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            script_path = os.path.join(script_dir, *script_relativo)
+            nuevo_proceso = self._lanzar_proceso(script_path)
+            setattr(self, attr_nombre, nuevo_proceso)
+            self.procesos_externos.append(nuevo_proceso)
+        except Exception as e:
+            messagebox.showerror("Error", f"No se pudo abrir {nombre_modulo}:\n{str(e)}")
     
     def abrir_censo(self):
         """Abrir sistema de censo"""
-        # Verificar si ya hay un proceso de censo corriendo
-        if self.proceso_censo is not None:
-            # Verificar si el proceso sigue vivo
-            if self.proceso_censo.poll() is None:
-                # El proceso sigue activo, mostrar mensaje
-                messagebox.showinfo(
-                    "Censo Abierto",
-                    "El sistema de censo ya está abierto.\n\nBusca la ventana existente."
-                )
-                return
-            else:
-                # El proceso terminó, permitir abrir uno nuevo
-                self.proceso_censo = None
-        
-        try:
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            censo_path = os.path.join(script_dir, "src", "modules", "censo", "censo_habitantes.py")
-            
-            # En Windows, usar pythonw.exe para evitar ventana de consola
-            if sys.platform == 'win32':
-                pythonw_exe = sys.executable.replace("python.exe", "pythonw.exe")
-                if os.path.exists(pythonw_exe):
-                    self.proceso_censo = subprocess.Popen([pythonw_exe, censo_path])
-                else:
-                    CREATE_NO_WINDOW = 0x08000000
-                    self.proceso_censo = subprocess.Popen([sys.executable, censo_path], 
-                                                         creationflags=CREATE_NO_WINDOW)
-            else:
-                self.proceso_censo = subprocess.Popen([sys.executable, censo_path])
-            
-            self.procesos_externos.append(self.proceso_censo)
-        except Exception as e:
-            messagebox.showerror("Error", f"No se pudo abrir Censo:\n{str(e)}")
+        self._abrir_modulo_externo(
+            attr_nombre="proceso_censo",
+            script_relativo=["src", "modules", "censo", "censo_habitantes.py"],
+            titulo="Censo Abierto",
+            mensaje_existente="El sistema de censo ya está abierto.\n\nBusca la ventana existente.",
+            nombre_modulo="Censo"
+        )
     
     def abrir_pagos(self):
         """Abrir control de pagos (con su propio login)"""
-        try:
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            pagos_path = os.path.join(script_dir, "src", "modules", "pagos", "control_pagos.py")
-            
-            # Abrir en proceso separado para que tenga su propio login
-            if sys.platform == 'win32':
-                pythonw_exe = sys.executable.replace("python.exe", "pythonw.exe")
-                if os.path.exists(pythonw_exe):
-                    subprocess.Popen([pythonw_exe, pagos_path])
-                else:
-                    CREATE_NO_WINDOW = 0x08000000
-                    subprocess.Popen([sys.executable, pagos_path], creationflags=CREATE_NO_WINDOW)
-            else:
-                subprocess.Popen([sys.executable, pagos_path])
-        except Exception as e:
-            messagebox.showerror("Error", f"No se pudo abrir Control de Pagos:\n{str(e)}")
+        self._abrir_modulo_externo(
+            attr_nombre="proceso_pagos",
+            script_relativo=["src", "modules", "pagos", "control_pagos.py"],
+            titulo="Control de Pagos",
+            mensaje_existente="El módulo de Pagos ya está abierto.",
+            nombre_modulo="Control de Pagos"
+        )
     
     def abrir_faenas(self):
         """Abrir registro de faenas (con su propio login)"""
-        try:
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            faenas_path = os.path.join(script_dir, "src", "modules", "faenas", "control_faenas.py")
-            
-            # Abrir en proceso separado para que tenga su propio login
-            if sys.platform == 'win32':
-                pythonw_exe = sys.executable.replace("python.exe", "pythonw.exe")
-                if os.path.exists(pythonw_exe):
-                    subprocess.Popen([pythonw_exe, faenas_path])
-                else:
-                    CREATE_NO_WINDOW = 0x08000000
-                    subprocess.Popen([sys.executable, faenas_path], creationflags=CREATE_NO_WINDOW)
-            else:
-                subprocess.Popen([sys.executable, faenas_path])
-        except Exception as e:
-            messagebox.showerror("Error", f"No se pudo abrir Registro de Faenas:\n{str(e)}")
+        self._abrir_modulo_externo(
+            attr_nombre="proceso_faenas",
+            script_relativo=["src", "modules", "faenas", "control_faenas.py"],
+            titulo="Registro de Faenas",
+            mensaje_existente="El módulo de Faenas ya está abierto.",
+            nombre_modulo="Registro de Faenas"
+        )
     
     def abrir_admin_usuarios(self):
         """Abrir administración de usuarios"""

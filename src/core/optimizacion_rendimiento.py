@@ -7,16 +7,20 @@ import sys
 import os
 
 
-def optimizar_rendimiento_sistema():
+def optimizar_rendimiento_sistema(silencioso: bool = False, instalar_dependencias: bool = True):
     """
-    Optimiza el rendimiento del sistema operativo para la aplicación
-    Aumenta prioridad de proceso y configura uso de recursos
+    Optimiza el rendimiento del sistema operativo para la aplicación.
+    Permite modo silencioso y control sobre instalación de dependencias.
     """
     optimizaciones = {
         'prioridad_proceso': False,
         'aceleracion_gpu': False,
         'memoria': False
     }
+
+    def log(msg: str):
+        if not silencioso:
+            print(msg)
     
     try:
         if sys.platform == 'win32':
@@ -33,47 +37,51 @@ def optimizar_rendimiento_sistema():
                 try:
                     proceso.nice(psutil.HIGH_PRIORITY_CLASS)
                     optimizaciones['prioridad_proceso'] = True
-                    print("✅ Prioridad de proceso: ALTA")
+                    log("✅ Prioridad de proceso: ALTA")
                 except:
                     try:
                         proceso.nice(psutil.ABOVE_NORMAL_PRIORITY_CLASS)
                         optimizaciones['prioridad_proceso'] = True
-                        print("✅ Prioridad de proceso: SUPERIOR A NORMAL")
+                        log("✅ Prioridad de proceso: SUPERIOR A NORMAL")
                     except Exception as e:
-                        print(f"⚠️ No se pudo cambiar prioridad: {e}")
+                        log(f"⚠️ No se pudo cambiar prioridad: {e}")
                 
                 # Información de recursos
                 info_mem = psutil.virtual_memory()
                 info_cpu = psutil.cpu_percent(interval=0.1)
                 
-                print(f"📊 Recursos del sistema:")
-                print(f"   CPU: {info_cpu}% en uso")
-                print(f"   RAM: {info_mem.percent}% en uso ({info_mem.available / (1024**3):.1f} GB disponibles)")
+                log(f"📊 Recursos del sistema:")
+                log(f"   CPU: {info_cpu}% en uso")
+                log(f"   RAM: {info_mem.percent}% en uso ({info_mem.available / (1024**3):.1f} GB disponibles)")
                 
                 optimizaciones['memoria'] = True
                 
             except ImportError:
-                print("⚠️ psutil no disponible. Instalando...")
-                try:
-                    import subprocess
-                    subprocess.check_call([sys.executable, "-m", "pip", "install", "psutil", "--quiet"])
-                    print("✅ psutil instalado. Reinicie la aplicación para aplicar optimizaciones.")
-                except:
-                    print("❌ No se pudo instalar psutil")
+                if instalar_dependencias:
+                    log("⚠️ psutil no disponible. Instalando...")
+                    try:
+                        import subprocess
+                        subprocess.check_call([sys.executable, "-m", "pip", "install", "psutil", "--quiet"])
+                        log("✅ psutil instalado. Reinicie la aplicación para aplicar optimizaciones.")
+                    except Exception as e:
+                        log(f"❌ No se pudo instalar psutil: {e}")
+                else:
+                    log("⚠️ psutil no disponible (instalación omitida)")
+                return optimizaciones
             
             # Habilitar aceleración por hardware (Windows DPI awareness)
             try:
                 ctypes.windll.shcore.SetProcessDpiAwareness(2)  # PROCESS_PER_MONITOR_DPI_AWARE
                 optimizaciones['aceleracion_gpu'] = True
-                print("✅ Aceleración DPI habilitada")
+                log("✅ Aceleración DPI habilitada")
             except Exception as e:
-                print(f"⚠️ No se pudo habilitar DPI awareness: {e}")
+                log(f"⚠️ No se pudo habilitar DPI awareness: {e}")
         
         else:
-            print("ℹ️ Optimizaciones específicas de Windows no aplicables en este sistema")
+            log("ℹ️ Optimizaciones específicas de Windows no aplicables en este sistema")
     
     except Exception as e:
-        print(f"❌ Error general en optimización: {e}")
+        log(f"❌ Error general en optimización: {e}")
     
     return optimizaciones
 

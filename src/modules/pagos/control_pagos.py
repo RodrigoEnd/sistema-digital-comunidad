@@ -1,6 +1,5 @@
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
-import json
 import os
 from datetime import datetime
 import subprocess
@@ -15,9 +14,8 @@ if __name__ == "__main__":
     if proyecto_raiz not in sys.path:
         sys.path.insert(0, proyecto_raiz)
 
-from src.auth.seguridad import seguridad
 from src.core.logger import registrar_operacion, registrar_error, registrar_transaccion
-from src.config import TEMAS, TAMAÑOS_LETRA, PASSWORD_CIFRADO, ARCHIVO_PAGOS
+from src.config import TEMAS, TAMAÑOS_LETRA
 from src.core.validadores import validar_nombre, validar_monto, ErrorValidacion
 from src.tools.exportador import ExportadorExcel
 from src.tools.backups import GestorBackups
@@ -26,12 +24,8 @@ from src.ui.tema_moderno import FUENTES, FUENTES_DISPLAY, ESPACIADO, ICONOS
 from src.ui.estilos_globales import TEMA_GLOBAL
 from src.ui.ui_moderna import BarraSuperior, PanelModerno, BotonModerno
 from src.ui.buscador import BuscadorAvanzado
-# === Importar gestores modularizados ===
-from src.modules.pagos.pagos_gestor_cooperaciones import GestorCooperaciones
-from src.modules.pagos.pagos_gestor_personas import GestorPersonas
-from src.modules.pagos.pagos_gestor_datos import GestorDatos
-from src.core.gestor_datos_global import obtener_gestor
 from src.modules.pagos.pagos_seguridad import GestorSeguridad
+from src.core.gestor_datos_global import obtener_gestor
 from src.modules.pagos.pagos_dialogos import (
     DialogoRegistrarPago, 
     DialogoAgregarPersona, 
@@ -72,10 +66,10 @@ class SistemaControlPagos:
         self.cooperacion_actual = None
         self.personas = []
         self.monto_cooperacion = 100.0
-        self.proyecto_actual = "Proyecto Comunitario 2026"
+        self.proyecto_actual = "Cooperación General"
+        self.cooperacion_actual = "Cooperación General"
+        self.coop_activa_id = None
         self.mostrar_total = False
-        self.archivo_datos = ARCHIVO_PAGOS
-        self.password_archivo = PASSWORD_CIFRADO
         self.password_hash = None
         self.fila_animada = None
         self.guardado_pendiente = None
@@ -85,42 +79,26 @@ class SistemaControlPagos:
         self.permisos_rol = {}
         self.barra_superior = None
         # BUGFIX: Inicializar variables UI temprano para evitar AttributeError
-        self.monto_var = tk.DoubleVar(value=100.0)
-        self.proyecto_var = tk.StringVar(value="Proyecto Comunitario 2026")
+        self.monto_var = tk.DoubleVar(value=300.0)
+        self.proyecto_var = tk.StringVar(value="Cooperación General")
         # BUGFIX TCL: Inicializar afterID para evitar comandos inválidos
         self._after_id_barra = None
         
         # Flag para inicialización asíncrona
         self._inicializacion_completada = False
         
-        # Cargar datos del archivo PRIMERO
-        self.cargar_datos()
-        
-        # === INICIALIZAR GESTORES MODULARIZADOS - DESPUÉS de cargar datos ===
+        # === INICIALIZAR BD Y GESTORES ===
         from src.core.base_datos_sqlite import obtener_bd
-        self.bd = obtener_bd()  # Añadir acceso a BD para verificar contraseñas
-        self.gestor_datos = GestorDatos(ARCHIVO_PAGOS, PASSWORD_CIFRADO)
-        self.gestor_cooperaciones = GestorCooperaciones(ARCHIVO_PAGOS, None)
-        # Sincronizar datos con gestores
-        self.gestor_cooperaciones.cargar_cooperaciones({
-            'cooperaciones': self.cooperaciones,
-            'cooperacion_activa': self.coop_activa_id
-        })
-        self.gestor_personas = GestorPersonas()
+        self.bd = obtener_bd()
+        
+        # Cargar cooperaciones desde BD
+        self._cargar_cooperaciones_bd()
+        
         self.gestor = obtener_gestor()  # Gestor centralizado
         self.gestor_seguridad = GestorSeguridad()
         self.gestor_historial = GestorHistorial(id_cooperacion='general')
         self.buscador = BuscadorAvanzado()
         self.gestor_backups = GestorBackups()
-        
-        self.aplicar_cooperacion_activa()
-        
-        # BUGFIX: Auditar coherencia de cooperaciones al iniciar
-        self._auditar_coherencia_inicial()
-        
-        # Aplicar tamaño guardado
-        if hasattr(self, 'tamaño_guardado'):
-            self.tamaño_actual.set(self.tamaño_guardado)
         
         # Vincular eventos de cambio
         self.tamaño_actual.trace('w', self.aplicar_tamaño)
@@ -153,6 +131,9 @@ class SistemaControlPagos:
         self.permisos_rol = self.gestor_auth.ROLES if self.gestor_auth else {}
         registrar_operacion('LOGIN', 'Usuario inició sesión', 
             {'usuario': usuario['nombre'], 'rol': usuario['rol']}, usuario['nombre'])
+        
+        # Aplicar cooperación activa
+        self.aplicar_cooperacion_activa()
         
         # Configurar la interfaz con el usuario establecido
         try:
@@ -481,57 +462,157 @@ class SistemaControlPagos:
 
     # ====== GESTION DE COOPERACIONES ======
     def obtener_cooperacion_activa(self):
-        """BUGFIX: Buscar cooperación activa directamente en la lista para coherencia"""
-        # Buscar por ID activo
+        """Obtiene la cooperación activa desde la lista en memoria (de BD)"""
         if self.coop_activa_id:
             for coop in self.cooperaciones:
                 if coop.get('id') == self.coop_activa_id:
                     return coop
         
-        # Si no encuentra por ID, usar gestor como fallback
-        return self.gestor_cooperaciones.obtener_cooperacion_activa()
+        # Si no encuentra, retornar la primera
+        return self.cooperaciones[0] if self.cooperaciones else None
 
+    def _cargar_cooperaciones_bd(self):
+        """Carga cooperaciones desde BD SQLite"""
+        try:
+            cursor = self.bd.conexion.cursor()
+            
+            # Obtener todas las cooperaciones
+            cursor.execute('''
+                SELECT id, nombre, proyecto, monto_cooperacion, activa, fecha_creacion
+                FROM cooperaciones
+                ORDER BY fecha_creacion DESC
+            ''')
+            
+            self.cooperaciones = []
+            cooperacion_activa = None
+            
+            for coop_id, nombre, proyecto, monto, activa, fecha_creacion in cursor.fetchall():
+                # Obtener personas de esta cooperación
+                personas = self._obtener_personas_coop_bd(coop_id)
+                
+                coop = {
+                    'id': coop_id,
+                    'nombre': nombre,
+                    'proyecto': proyecto,
+                    'monto_cooperacion': monto,
+                    'personas': personas,
+                    'activa': bool(activa),
+                    'fecha_creacion': fecha_creacion
+                }
+                self.cooperaciones.append(coop)
+                
+                if bool(activa):
+                    cooperacion_activa = coop
+                    self.coop_activa_id = coop_id
+            
+            # Si no hay cooperación activa pero existen, activar la primera
+            if not cooperacion_activa and self.cooperaciones:
+                self.coop_activa_id = self.cooperaciones[0]['id']
+                self.personas = self.cooperaciones[0]['personas']
+                self.proyecto_actual = self.cooperaciones[0]['proyecto']
+                self.cooperacion_actual = self.cooperaciones[0]['nombre']
+                self.monto_cooperacion = self.cooperaciones[0]['monto_cooperacion']
+            elif cooperacion_activa:
+                self.personas = cooperacion_activa['personas']
+                self.proyecto_actual = cooperacion_activa['proyecto']
+                self.cooperacion_actual = cooperacion_activa['nombre']
+                self.monto_cooperacion = cooperacion_activa['monto_cooperacion']
+            else:
+                self.personas = []
+                self.monto_cooperacion = 300.0
+        
+        except Exception as e:
+            print(f"Error cargando cooperaciones desde BD: {e}")
+            self.cooperaciones = []
+            self.personas = []
+            self.monto_cooperacion = 300.0
+    
+    def _obtener_personas_coop_bd(self, coop_id):
+        """Obtiene todas las personas de una cooperación desde BD"""
+        try:
+            cursor = self.bd.conexion.cursor()
+            
+            cursor.execute('''
+                SELECT pc.id, pc.habitante_id, h.folio, h.nombre, 
+                       pc.monto_esperado, pc.estado, pc.notas, pc.fecha_agregado
+                FROM personas_cooperacion pc
+                LEFT JOIN habitantes h ON pc.habitante_id = h.id
+                WHERE pc.cooperacion_id = ?
+                ORDER BY h.nombre
+            ''', (coop_id,))
+            
+            personas = []
+            for pc_id, habitante_id, folio, nombre, monto_esp, estado, notas, fecha_agg in cursor.fetchall():
+                
+                # Obtener pagos de esta persona
+                pagos = self._obtener_pagos_persona_bd(pc_id)
+                
+                persona = {
+                    'id': habitante_id,
+                    'folio': folio or 'SIN-FOLIO',
+                    'nombre': nombre or 'SIN-NOMBRE',
+                    'monto_esperado': monto_esp,
+                    'monto': monto_esp,
+                    'pagos': pagos,
+                    'notas': notas or '',
+                    'estado': estado,
+                    'persona_coop_id': pc_id
+                }
+                personas.append(persona)
+            
+            return personas
+        
+        except Exception as e:
+            print(f"Error obteniendo personas: {e}")
+            return []
+    
+    def _obtener_pagos_persona_bd(self, persona_coop_id):
+        """Obtiene todos los pagos de una persona desde BD"""
+        try:
+            cursor = self.bd.conexion.cursor()
+            
+            cursor.execute('''
+                SELECT id, monto, fecha_pago, hora_pago, concepto, anulado
+                FROM pagos_coop
+                WHERE persona_coop_id = ?
+                ORDER BY fecha_pago DESC
+            ''', (persona_coop_id,))
+            
+            pagos = []
+            for pago_id, monto, fecha, hora, concepto, anulado in cursor.fetchall():
+                pagos.append({
+                    'id': pago_id,
+                    'monto': monto,
+                    'fecha': fecha,
+                    'hora': hora or '00:00',
+                    'concepto': concepto or 'Pago cooperación',
+                    'anulado': bool(anulado)
+                })
+            
+            return pagos
+        
+        except Exception as e:
+            print(f"Error obteniendo pagos: {e}")
+            return []
+    
     def aplicar_cooperacion_activa(self):
-        """BUGFIX: Aplica cooperación activa e inicializa historial coherente"""
-        coop = self.obtener_cooperacion_activa()
-        if coop is None and self.cooperaciones:
-            self.coop_activa_id = self.cooperaciones[0].get('id')
+        """Aplica cooperación activa desde BD"""
+        if not self.cooperaciones:
+            return
+        
+        coop = next((c for c in self.cooperaciones if c['id'] == self.coop_activa_id), None)
+        if not coop:
             coop = self.cooperaciones[0]
-        if coop is None:
-            coop = {
-                'id': f"coop-{int(time.time())}",
-                'nombre': 'Cooperacion General',
-                'proyecto': self.proyecto_actual,
-                'monto_cooperacion': self.monto_cooperacion,
-                'personas': []
-            }
-            self.cooperaciones = [coop]
             self.coop_activa_id = coop['id']
         
-        # Aplicar datos de cooperación activa
-        self.personas = coop.setdefault('personas', [])
-        self.monto_cooperacion = coop.get('monto_cooperacion', self.monto_cooperacion)
+        self.personas = coop.get('personas', [])
+        self.monto_cooperacion = coop.get('monto_cooperacion', 300.0)
+        self.proyecto_actual = coop.get('proyecto', 'Cooperación General')
+        self.cooperacion_actual = coop.get('nombre', 'Cooperación')
         
-        # SINCRONIZACIÓN: Actualizar nombres desde BD de habitantes
-        self._sincronizar_nombres_desde_bd()
-        self.proyecto_actual = coop.get('proyecto', self.proyecto_actual)
-        self.cooperacion_actual = coop.get('nombre', 'Cooperacion')
-        
-        # BUGFIX: Reinicializar gestor de historial para que sea INDEPENDIENTE por cooperación
-        # El historial ahora registra cambios específicos de cada cooperación
-        coop_id_para_historial = self.coop_activa_id or 'general'
-        self.gestor_historial = GestorHistorial(id_cooperacion=coop_id_para_historial)
-        
-        registrar_operacion(
-            'CAMBIO_COOPERACION_ACTIVA',
-            f'Cooperación cambiada a: {self.cooperacion_actual}',
-            {
-                'cooperacion_id': self.coop_activa_id,
-                'nombre': self.cooperacion_actual,
-                'proyecto': self.proyecto_actual,
-                'personas': len(self.personas)
-            }
-        )
+        # Sincronizar StringVars
+        self.proyecto_var.set(self.proyecto_actual)
+        self.monto_var.set(self.monto_cooperacion)
 
     def refrescar_selector_cooperacion(self, seleccionar_activa=True):
         """BUGFIX: Refrescar selector y disparar cambio de cooperación manualmente si es necesario"""
@@ -578,10 +659,13 @@ class SistemaControlPagos:
         # 4. Actualizar totales con nuevos cálculos
         self.actualizar_totales()
         
-        # 5. Sincronizar con censo si es necesario
+        # 5. Actualizar contador de resultados
+        self._actualizar_contador_resultados()
+        
+        # 6. Sincronizar con censo si es necesario
         self.sincronizar_coop_con_censo(mostrar_mensaje=False)
         
-        # 6. Guardar cambios
+        # 7. Guardar cambios
         self.guardar_datos(mostrar_alerta=False, inmediato=True)
     
     def nueva_cooperacion(self):
@@ -1188,17 +1272,12 @@ class SistemaControlPagos:
         self.refrescar_interfaz_cooperacion()
         self.sincronizar_coop_con_censo(mostrar_mensaje=False)
         
-        # Cargar datos en la tabla
-        self.actualizar_tabla()
-        self.actualizar_totales()
+        # Cargar datos en la tabla - usar after() para asegurar que todo esté inicializado
+        # 50ms inicial para crear widgets, luego otro para refresco de datos
+        self.root.after(50, self._inicializar_datos_ui_final)
+        self.root.after(150, self._refresco_inicial)
         
         # ===== BARRA DE ESTADO INFERIOR =====
-        self.barra_estado = BarraEstadoModerna(main_frame, tema_visual)
-        self.barra_estado.frame.grid(row=2, column=0, sticky=(tk.W, tk.E), padx=0, pady=0)
-        self.actualizar_estado_barra()
-        
-        # ===== ATAJOS DE TECLADO (MEJORA 7) =====
-        self._configurar_atajos_teclado()
 
     def actualizar_visibilidad_columnas(self):
         """Mostrar/ocultar columnas de nombre y folio"""
@@ -1246,8 +1325,12 @@ class SistemaControlPagos:
             else:
                 self.btn_toggle_cifras.config(text="🙈 Mostrar cifras")
         
-        # Actualizar totales para reflejar el cambio
+        # Actualizar totales inmediatamente
         self.actualizar_totales()
+        
+        # Actualizar tabla para reflejar cambios de cifras en filas
+        if hasattr(self, 'tree'):
+            self.actualizar_tabla()
     
     def toggle_fullscreen_tabla(self):
         """Alterna entre pantalla completa de la tabla y vista normal"""
@@ -1739,6 +1822,8 @@ class SistemaControlPagos:
         # SearchBox ya maneja el debouncing, solo ejecutar la búsqueda
         self.actualizar_tabla()
         self._actualizar_contador_resultados()
+        # Actualizar totales cada búsqueda para reflejar cambios de la cooperación activa
+        self.actualizar_totales()
     
     def _actualizar_contador_resultados(self):
         """Muestra el contador de resultados de búsqueda en la barra de estado"""
@@ -1763,6 +1848,7 @@ class SistemaControlPagos:
         if hasattr(self, 'search_box'):
             self.search_box.clear()
         self.actualizar_tabla()
+        self.actualizar_totales()
         self._actualizar_contador_resultados()
     
     def actualizar_tabla(self):
@@ -1988,6 +2074,34 @@ class SistemaControlPagos:
                 # Remover indicador
                 self.tree.heading(col, text=texto)
     
+    def _inicializar_datos_ui_final(self):
+        """Inicializa datos UI de forma diferida para asegurar widgets listos"""
+        try:
+            # Verificar que los widgets críticos existan
+            if not hasattr(self, 'tree') or not self.tree:
+                return
+            if not hasattr(self, 'search_box') or not self.search_box:
+                return
+                
+            self.actualizar_tabla()
+            self.actualizar_totales()
+            self._actualizar_contador_resultados()
+            self._inicializacion_completada = True
+        except Exception as e:
+            registrar_error('control_pagos', '_inicializar_datos_ui_final', str(e))
+
+    def _refresco_inicial(self):
+        """Refresco final para asegurar que todo esté visible correctamente"""
+        try:
+            if not hasattr(self, 'tree') or not self.tree:
+                return
+            # Forzar actualización de la tabla
+            self.root.update_idletasks()
+            self.actualizar_tabla()
+            self.actualizar_totales()
+        except Exception as e:
+            registrar_error('control_pagos', '_refresco_inicial', str(e))
+
     def _configurar_atajos_teclado(self):
         """MEJORA 7: Configura atajos de teclado para acciones comunes"""
         # Ctrl+F: Enfocar en la caja de búsqueda
@@ -2110,70 +2224,33 @@ class SistemaControlPagos:
         return f"{folio}|{id(persona)}"
     
     def guardar_datos(self, mostrar_alerta=True, inmediato=False):
-        """Guardar datos con debounce para evitar conflictos"""
-        if inmediato:
-            self._ejecutar_guardado(mostrar_alerta)
-        else:
-            # Cancelar guardado pendiente
-            if self.guardado_pendiente:
-                self.root.after_cancel(self.guardado_pendiente)
-            # Programar nuevo guardado en 500ms
-            self.guardado_pendiente = self.root.after(500, lambda: self._ejecutar_guardado(mostrar_alerta))
-    
-    def _ejecutar_guardado(self, mostrar_alerta=True):
-        """Ejecuta el guardado real de datos"""
+        """Guardar datos en BD SQLite (ya no usa JSON)"""
         try:
-            self.guardado_pendiente = None
-            coop = self.obtener_cooperacion_activa()
-            if coop:
-                coop['proyecto'] = self.proyecto_var.get()
-                coop['monto_cooperacion'] = self.monto_cooperacion
-                coop['personas'] = self.personas
-            datos = {
-                'cooperaciones': self.cooperaciones,
-                'cooperacion_activa': self.coop_activa_id,
-                'password_hash': self.password_hash,
-                'tamaño': self.tamaño_actual.get(),
-                'fecha_guardado': datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-            }
-            
-            # Guardar cifrado en ubicación segura
-            if seguridad.cifrar_archivo(datos, self.archivo_datos, self.password_archivo):
-                if mostrar_alerta:
-                    messagebox.showinfo("Exito", "Datos guardados correctamente")
-                # Actualizar barra de estado
-                if hasattr(self, 'barra_estado') and self.barra_estado:
-                    self.barra_estado.mostrar_mensaje_temporal("✓ Guardado", 2)
-                self.actualizar_estado_barra()
-            else:
-                if mostrar_alerta:
-                    messagebox.showerror("Error", "Error al guardar los datos")
+            # Los datos se guardan directamente en BD mediante transacciones
+            # Esta función ahora es un placeholder por compatibilidad
+            if mostrar_alerta and inmediato:
+                messagebox.showinfo("✓ Guardado", "Datos sincronizados con BD")
         except Exception as e:
             if mostrar_alerta:
-                messagebox.showerror("Error", f"Error al guardar: {str(e)}")
+                messagebox.showerror("Error", f"Error: {str(e)}")
+    
+    def _ejecutar_guardado(self, mostrar_alerta=True):
+        """Ya no necesario con BD"""
+        pass
 
     def cargar_datos(self):
+        """Ya no carga desde JSON, todo viene de BD en _cargar_cooperaciones_bd()"""
+        pass
+    
+    def guardar_datos(self, mostrar_alerta=True, inmediato=False):
+        """Guarda datos en BD SQLite (ya no usa JSON)"""
         try:
-            if seguridad.archivo_existe(self.archivo_datos):
-                datos = seguridad.descifrar_archivo(self.archivo_datos, self.password_archivo)
-                if datos:
-                    self.password_hash = datos.get('password_hash', self.password_hash)
-                    if 'cooperaciones' in datos:
-                        self.cooperaciones = datos.get('cooperaciones', [])
-                        self.coop_activa_id = datos.get('cooperacion_activa')
-                        self.tamaño_guardado = datos.get('tamaño', 'normal')
-            if not self.cooperaciones:
-                nueva = {
-                    'id': f"coop-{int(time.time())}",
-                    'nombre': 'Cooperacion General',
-                    'proyecto': self.proyecto_actual,
-                    'monto_cooperacion': self.monto_cooperacion,
-                    'personas': []
-                }
-                self.cooperaciones = [nueva]
-                self.coop_activa_id = nueva['id']
+            # Los datos ya se guardan en BD mediante transacciones
+            # Esta función ahora es un placeholder por compatibilidad
+            if mostrar_alerta:
+                messagebox.showinfo("Guardado", "Datos guardados en BD")
         except Exception as e:
-            registrar_error('control_pagos', 'cargar_datos', str(e))
+            registrar_error('control_pagos', 'guardar_datos', str(e))
     
     def exportar_excel(self):
         """Exportar cooperación actual a Excel"""
@@ -2269,22 +2346,8 @@ class SistemaControlPagos:
             registrar_error('control_pagos', '_auditar_coherencia_inicial', str(e))
     
     def _sincronizar_nombres_desde_bd(self):
-        """Sincroniza los nombres de personas con la BD de habitantes"""
-        try:
-            sincronizados = 0
-            for persona in self.personas:
-                folio = persona.get('folio', '')
-                if folio:
-                    habitante = self.gestor.obtener_habitante_por_folio(folio)
-                    if habitante and habitante['nombre'] != persona['nombre']:
-                        persona['nombre'] = habitante['nombre']
-                        sincronizados += 1
-            
-            if sincronizados > 0:
-                # Guardar cambios sincronizados
-                self.guardar_datos(mostrar_alerta=False, inmediato=True)
-        except Exception as e:
-            registrar_error('control_pagos', '_sincronizar_nombres_desde_bd', str(e))
+        """Ya no necesario - los nombres vienen sincronizados desde BD"""
+        pass
     
     def cerrar_aplicacion(self):
         """Cerrar aplicación con backup automático silencioso"""

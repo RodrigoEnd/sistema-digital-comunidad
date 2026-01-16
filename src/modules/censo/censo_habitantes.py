@@ -42,28 +42,8 @@ class SistemaCensoHabitantes:
         self.root = root
         self.root.title("📋 Sistema de Censo de Habitantes - Comunidad San Pablo")
         
-        # Optimizaciones de rendimiento para la ventana
+        # Optimizaciones de rendimiento para la ventana (sin operaciones pesadas en UI)
         self.root.resizable(True, True)
-        
-        # Configurar para mejor rendimiento
-        try:
-            # Habilitar aceleración por hardware en Windows
-            self.root.wm_attributes('-alpha', 1.0)
-            
-            # Configurar prioridad de proceso (Windows)
-            if sys.platform == 'win32':
-                import ctypes
-                import psutil
-                
-                # Obtener proceso actual
-                process = psutil.Process()
-                
-                # Establecer prioridad alta (sin llegar a realtime que puede causar problemas)
-                process.nice(psutil.HIGH_PRIORITY_CLASS)
-                
-                print("[Censo] Prioridad de proceso establecida a ALTA")
-        except Exception as e:
-            print(f"[Censo] No se pudo optimizar prioridad: {e}")
         
         # Tamaño y posición optimizados
         self.root.geometry("1400x800")
@@ -88,6 +68,11 @@ class SistemaCensoHabitantes:
         self._optimizer = get_ui_optimizer()
         self._search_cache = {}
         self._last_search_key = None
+
+        # Cache y threading para indicadores
+        self._indicadores_cache_result = None
+        self._indicadores_cache_time = 0
+        self._indicadores_worker = None
         
         # Control de threading y operaciones asíncronas
         self._carga_en_progreso = False
@@ -734,58 +719,71 @@ class SistemaCensoHabitantes:
     # ===== MÉTODOS DE INDICADORES Y TOOLTIPS =====
     
     def _actualizar_indicadores_estado(self):
-        """Actualiza los indicadores de estado de pagos y faenas con caché"""
+        """Actualiza indicadores en segundo plano para no bloquear la UI."""
         try:
             # Protección: verificar que existen los canvas
             if not hasattr(self, 'canvas_pagos') or not hasattr(self, 'canvas_faenas'):
                 return
-            
-            # Si ya tenemos valores en caché y no han pasado más de 30 segundos, no recalcular
-            if hasattr(self, '_indicadores_cache_time'):
-                import time
-                if time.time() - self._indicadores_cache_time < 30:
-                    return
-            
-            total_pagos = 0.0
-            total_faenas = 0.0
-            count = len(self.habitantes)
-            
-            if count == 0:
-                ratio_pagos_promedio = 0.5
-                ratio_faenas_promedio = 0.5
-            else:
-                # Optimización: Calcular en lotes de 50 y permitir que UI responda
-                for i, hab in enumerate(self.habitantes):
-                    folio = hab.get('folio', '')
-                    nombre = hab.get('nombre', '')
-                    estado = calcular_estado_habitante(folio, nombre)
-                    total_pagos += estado['pagos']['ratio']
-                    total_faenas += estado['faenas']['ratio']
-                    
-                    # Cada 50 habitantes, permitir que UI responda
-                    if i > 0 and i % 50 == 0:
-                        self.root.update_idletasks()
-                
-                ratio_pagos_promedio = total_pagos / count
-                ratio_faenas_promedio = total_faenas / count
-            
-            color_pagos = self.__color_por_ratio(ratio_pagos_promedio)
-            color_faenas = self.__color_por_ratio(ratio_faenas_promedio)
-            
-            self.canvas_pagos.delete('all')
-            self.canvas_pagos.create_rectangle(2, 2, 23, 23, fill=color_pagos, outline='#333', width=2)
-            
-            self.canvas_faenas.delete('all')
-            self.canvas_faenas.create_rectangle(2, 2, 23, 23, fill=color_faenas, outline='#333', width=2)
-            
-            self.estado_pagos_promedio = ratio_pagos_promedio
-            self.estado_faenas_promedio = ratio_faenas_promedio
-            
-            # Guardar timestamp del caché
+
+            # Usar caché reciente
             import time
-            self._indicadores_cache_time = time.time()
+            if self._indicadores_cache_result and time.time() - self._indicadores_cache_time < 30:
+                pagos, faenas = self._indicadores_cache_result
+                self._pintar_indicadores(pagos, faenas)
+                return
+
+            # Si ya hay un cálculo en curso, no iniciar otro
+            if self._indicadores_worker and self._indicadores_worker.is_alive():
+                return
+
+            habitantes_snapshot = list(self.habitantes)
+
+            def _calcular():
+                total_pagos = 0.0
+                total_faenas = 0.0
+                count = len(habitantes_snapshot)
+
+                if count == 0:
+                    resultado = (0.5, 0.5)
+                else:
+                    for hab in habitantes_snapshot:
+                        folio = hab.get('folio', '')
+                        nombre = hab.get('nombre', '')
+                        estado = calcular_estado_habitante(folio, nombre)
+                        total_pagos += estado['pagos']['ratio']
+                        total_faenas += estado['faenas']['ratio']
+
+                    resultado = (total_pagos / count, total_faenas / count)
+
+                def _aplicar():
+                    self._indicadores_cache_result = resultado
+                    self._indicadores_cache_time = time.time()
+                    self._pintar_indicadores(*resultado)
+
+                self.root.after(0, _aplicar)
+
+            self._indicadores_worker = threading.Thread(target=_calcular, daemon=True)
+            self._indicadores_worker.start()
+
         except Exception as e:
             print(f"Error actualizando indicadores: {e}")
+
+    def _pintar_indicadores(self, ratio_pagos_promedio, ratio_faenas_promedio):
+        """Pinta los canvas de indicadores de forma ligera."""
+        try:
+            color_pagos = self.__color_por_ratio(ratio_pagos_promedio)
+            color_faenas = self.__color_por_ratio(ratio_faenas_promedio)
+
+            self.canvas_pagos.delete('all')
+            self.canvas_pagos.create_rectangle(2, 2, 23, 23, fill=color_pagos, outline='#333', width=2)
+
+            self.canvas_faenas.delete('all')
+            self.canvas_faenas.create_rectangle(2, 2, 23, 23, fill=color_faenas, outline='#333', width=2)
+
+            self.estado_pagos_promedio = ratio_pagos_promedio
+            self.estado_faenas_promedio = ratio_faenas_promedio
+        except Exception as e:
+            print(f"Error pintando indicadores: {e}")
     
     def __color_por_ratio(self, ratio):
         """Convierte ratio a color hexadecimal"""
