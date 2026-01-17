@@ -224,7 +224,72 @@ class BaseDatosSQLite:
                 ON auditoria(tabla)
             ''')
             
+            # ===== ÍNDICES PARA COOPERACIONES (Centro de Pagos) =====
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_cooperaciones_activa 
+                ON cooperaciones(activa)
+            ''')
+            
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_cooperaciones_nombre 
+                ON cooperaciones(nombre)
+            ''')
+            
+            # Índices para personas_cooperacion
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_personas_coop_coop_id 
+                ON personas_cooperacion(cooperacion_id)
+            ''')
+            
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_personas_coop_habitante_id 
+                ON personas_cooperacion(habitante_id)
+            ''')
+            
+            # Índices para pagos_coop
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_pagos_coop_persona_id 
+                ON pagos_coop(persona_coop_id)
+            ''')
+            
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_pagos_coop_fecha 
+                ON pagos_coop(fecha_pago DESC)
+            ''')
+            
             # ===== TABLAS PARA COOPERACIONES (Centro de Pagos) =====
+            # Índices de rendimiento para cooperaciones
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_cooperaciones_activa 
+                ON cooperaciones(activa)
+            ''')
+            
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_cooperaciones_nombre 
+                ON cooperaciones(nombre)
+            ''')
+            
+            # Índices para personas_cooperacion (búsquedas frecuentes)
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_personas_coop_coop_id 
+                ON personas_cooperacion(cooperacion_id)
+            ''')
+            
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_personas_coop_habitante_id 
+                ON personas_cooperacion(habitante_id)
+            ''')
+            
+            # Índices para pagos_coop (búsquedas de historial)
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_pagos_coop_persona_id 
+                ON pagos_coop(persona_coop_id)
+            ''')
+            
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_pagos_coop_fecha 
+                ON pagos_coop(fecha_pago DESC)
+            ''')
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS cooperaciones (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -314,6 +379,8 @@ class BaseDatosSQLite:
                        fecha_nacimiento="", nota="", grupo_familiar=None, activo=True):
         """Crear nuevo habitante en el sistema
         
+        MEJORADO: Evita reconectar si ya hay conexión activa
+        
         Args:
             folio (str): Identificador único FOL-XXXX
             nombre (str): Nombre del habitante
@@ -330,7 +397,11 @@ class BaseDatosSQLite:
         Returns:
             tuple: (dict con datos del habitante, str mensaje de confirmación)
         """
-        cursor = self.conectar().cursor()
+        # MEJORA: Usar conexión existente si está disponible
+        if not self.conexion:
+            self.conectar()
+        
+        cursor = self.conexion.cursor()
         
         try:
             cursor.execute('''
@@ -357,17 +428,22 @@ class BaseDatosSQLite:
             return None, f"Error al crear habitante: {str(e)}"
     
     def agregar_habitante(self, nombre, apellidos="", rut="", telefono="", email="", direccion=""):
-        """[DEPRECATED] Usar crear_habitante() en su lugar
+        """[MEJORADO] Agregar habitante - ahora sin reconectar
         
-        Mantiene compatibilidad con código antiguo
+        Antes usaba conectar() lo que causaba bloqueos. Ahora usa la conexión existente.
         """
-        cursor = self.conectar().cursor()
+        # Asegurar que hay conexión
+        if not self.conexion:
+            self.conectar()
+        
+        cursor = self.conexion.cursor()
         
         try:
             # Generar folio automáticamente
-            cursor.execute("SELECT COUNT(*) as total FROM habitantes")
-            total = cursor.fetchone()['total']
-            folio = f"FOL-{total + 1:04d}"
+            cursor.execute("SELECT MAX(CAST(SUBSTR(folio, 5) AS INTEGER)) FROM habitantes WHERE folio LIKE 'FOL-%'")
+            max_num_result = cursor.fetchone()
+            max_num = max_num_result[0] if max_num_result and max_num_result[0] else 0
+            folio = f"FOL-{max_num + 1:04d}"
             
             return self.crear_habitante(folio, nombre, apellidos, rut, telefono, email, direccion)
             
@@ -829,6 +905,180 @@ class BaseDatosSQLite:
         except sqlite3.Error as e:
             registrar_error('BaseDatosSQLite', 'limpiar_auditoria_antigua', str(e))
             return False, f"Error: {str(e)}"
+    
+    def crear_cooperacion_bd(self, nombre, proyecto, monto_cooperacion):
+        """Crear una cooperación en BD SQLite"""
+        cursor = self.conectar().cursor()
+        try:
+            from datetime import datetime
+            ahora = datetime.now().isoformat()
+            
+            cursor.execute('''
+                INSERT INTO cooperaciones (nombre, proyecto, monto_cooperacion, activa, fecha_creacion)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (nombre, proyecto, monto_cooperacion, 1, ahora))
+            
+            self.conexion.commit()
+            coop_id = cursor.lastrowid
+            registrar_operacion('CREAR_COOP', f'Cooperación creada: {nombre}', 
+                {'id': coop_id, 'monto': monto_cooperacion})
+            return coop_id
+        except sqlite3.IntegrityError as e:
+            registrar_error('BaseDatosSQLite', 'crear_cooperacion_bd', f'Duplicado: {str(e)}')
+            return None
+        except Exception as e:
+            registrar_error('BaseDatosSQLite', 'crear_cooperacion_bd', str(e))
+            return None
+    
+    def agregar_persona_coop_bd(self, coop_id, habitante_id, monto_esperado, notas=''):
+        """Agregar una persona a una cooperación en BD SQLite"""
+        cursor = self.conectar().cursor()
+        try:
+            from datetime import datetime
+            ahora = datetime.now().isoformat()
+            
+            cursor.execute('''
+                INSERT INTO personas_cooperacion 
+                (cooperacion_id, habitante_id, monto_esperado, estado, notas, fecha_agregado)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (coop_id, habitante_id, monto_esperado, 'pendiente', notas, ahora))
+            
+            self.conexion.commit()
+            persona_coop_id = cursor.lastrowid
+            registrar_operacion('AGREGAR_PERSONA_COOP', f'Persona agregada a cooperación {coop_id}',
+                {'persona_coop_id': persona_coop_id, 'habitante_id': habitante_id})
+            return persona_coop_id
+        except sqlite3.IntegrityError as e:
+            registrar_error('BaseDatosSQLite', 'agregar_persona_coop_bd', f'Duplicado: {str(e)}')
+            return None
+        except Exception as e:
+            registrar_error('BaseDatosSQLite', 'agregar_persona_coop_bd', str(e))
+            return None
+    
+    def registrar_pago_coop_bd(self, persona_coop_id, monto, fecha_pago, hora_pago, concepto, registrado_por=None):
+        """Registrar un pago en cooperación en BD SQLite"""
+        cursor = self.conectar().cursor()
+        try:
+            from datetime import datetime
+            ahora = datetime.now().isoformat()
+            
+            cursor.execute('''
+                INSERT INTO pagos_coop
+                (persona_coop_id, monto, fecha_pago, hora_pago, concepto, registrado_por, fecha_registro, anulado)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (persona_coop_id, monto, fecha_pago, hora_pago, concepto, registrado_por, ahora, 0))
+            
+            self.conexion.commit()
+            pago_id = cursor.lastrowid
+            registrar_operacion('PAGO_REGISTRADO', 'Pago registrado en cooperación',
+                {'pago_id': pago_id, 'monto': monto, 'fecha': fecha_pago})
+            return pago_id
+        except Exception as e:
+            registrar_error('BaseDatosSQLite', 'registrar_pago_coop_bd', str(e))
+            return None
+    
+    def actualizar_persona_coop_bd(self, persona_coop_id, monto_esperado=None, estado=None, notas=None):
+        """Actualizar datos de persona en cooperación en BD SQLite"""
+        cursor = self.conectar().cursor()
+        try:
+            updates = []
+            params = []
+            
+            if monto_esperado is not None:
+                updates.append('monto_esperado = ?')
+                params.append(monto_esperado)
+            
+            if estado is not None:
+                updates.append('estado = ?')
+                params.append(estado)
+            
+            if notas is not None:
+                updates.append('notas = ?')
+                params.append(notas)
+            
+            if not updates:
+                return True  # No hay nada que actualizar
+            
+            params.append(persona_coop_id)
+            query = f"UPDATE personas_cooperacion SET {', '.join(updates)} WHERE id = ?"
+            
+            cursor.execute(query, params)
+            self.conexion.commit()
+            
+            registrar_operacion('ACTUALIZAR_PERSONA_COOP', f'Persona cooperación {persona_coop_id} actualizada',
+                {'persona_coop_id': persona_coop_id, 'estado': estado})
+            return True
+            
+        except Exception as e:
+            registrar_error('BaseDatosSQLite', 'actualizar_persona_coop_bd', str(e))
+            return False
+    
+    def eliminar_persona_coop_bd(self, persona_coop_id):
+        """Eliminar persona de cooperación (NO elimina habitante del censo)"""
+        cursor = self.conectar().cursor()
+        try:
+            # Solo elimina de personas_cooperacion, no del censo
+            cursor.execute('''
+                DELETE FROM personas_cooperacion WHERE id = ?
+            ''', (persona_coop_id,))
+            
+            self.conexion.commit()
+            registrar_operacion('ELIMINAR_PERSONA_COOP', f'Persona de cooperación {persona_coop_id} eliminada',
+                {'persona_coop_id': persona_coop_id})
+            return True
+            
+        except Exception as e:
+            registrar_error('BaseDatosSQLite', 'eliminar_persona_coop_bd', str(e))
+            return False
+    
+    def crear_cooperacion_bd(self, nombre, proyecto, monto_cooperacion):
+        """Crear una cooperación en BD SQLite"""
+        cursor = self.conectar().cursor()
+        try:
+            from datetime import datetime
+            ahora = datetime.now().isoformat()
+            
+            cursor.execute('''
+                INSERT INTO cooperaciones (nombre, proyecto, monto_cooperacion, activa, fecha_creacion)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (nombre, proyecto, monto_cooperacion, 1, ahora))
+            
+            self.conexion.commit()
+            coop_id = cursor.lastrowid
+            registrar_operacion('CREAR_COOP', f'Cooperación creada: {nombre}', 
+                {'id': coop_id, 'monto': monto_cooperacion})
+            return coop_id
+        except sqlite3.IntegrityError as e:
+            registrar_error('BaseDatosSQLite', 'crear_cooperacion_bd', f'Duplicado: {str(e)}')
+            return None
+        except Exception as e:
+            registrar_error('BaseDatosSQLite', 'crear_cooperacion_bd', str(e))
+            return None
+    
+    def agregar_persona_coop_bd(self, coop_id, habitante_id, monto_esperado, notas=''):
+        """Agregar una persona a una cooperación en BD SQLite"""
+        cursor = self.conectar().cursor()
+        try:
+            from datetime import datetime
+            ahora = datetime.now().isoformat()
+            
+            cursor.execute('''
+                INSERT INTO personas_cooperacion 
+                (cooperacion_id, habitante_id, monto_esperado, estado, notas, fecha_agregado)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (coop_id, habitante_id, monto_esperado, 'pendiente', notas, ahora))
+            
+            self.conexion.commit()
+            persona_coop_id = cursor.lastrowid
+            registrar_operacion('AGREGAR_PERSONA_COOP', f'Persona agregada a cooperación {coop_id}',
+                {'persona_coop_id': persona_coop_id, 'habitante_id': habitante_id})
+            return persona_coop_id
+        except sqlite3.IntegrityError as e:
+            registrar_error('BaseDatosSQLite', 'agregar_persona_coop_bd', f'Duplicado: {str(e)}')
+            return None
+        except Exception as e:
+            registrar_error('BaseDatosSQLite', 'agregar_persona_coop_bd', str(e))
+            return None
     
     def _crear_cooperacion_initial(self):
         """Crea la cooperación inicial si no existe"""

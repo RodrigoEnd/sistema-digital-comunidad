@@ -28,8 +28,8 @@ class GestorEstadoPago:
     ESTADOS = {
         'pendiente': {
             'nombre': 'Pendiente',
-            'emoji': '○',
-            'símbolo': '○',
+            'emoji': '',
+            'símbolo': '',
             'descripción': 'Sin pagos registrados',
             'color_fg': 'error',
             'color_bg': '#FFEBEE',
@@ -37,8 +37,8 @@ class GestorEstadoPago:
         },
         'parcial': {
             'nombre': 'Parcial',
-            'emoji': '◐',
-            'símbolo': '◐',
+            'emoji': '',
+            'símbolo': '',
             'descripción': 'Pagado parcialmente',
             'color_fg': 'warning',
             'color_bg': '#FFF9E6',
@@ -46,8 +46,8 @@ class GestorEstadoPago:
         },
         'completado': {
             'nombre': 'Pagado',
-            'emoji': '●',
-            'símbolo': '●',
+            'emoji': '',
+            'símbolo': '',
             'descripción': 'Pago completado',
             'color_fg': 'success',
             'color_bg': '#E8F5E9',
@@ -55,8 +55,8 @@ class GestorEstadoPago:
         },
         'excedente': {
             'nombre': 'Excedente',
-            'emoji': '◆',
-            'símbolo': '◆',
+            'emoji': '',
+            'símbolo': '',
             'descripción': 'Pagado más de lo esperado',
             'color_fg': 'accent_primary',
             'color_bg': '#E3F2FD',
@@ -132,7 +132,7 @@ class GestorEstadoPago:
     def obtener_emoji_estado(estado):
         """Obtener solo el emoji de un estado"""
         datos = GestorEstadoPago.ESTADOS.get(estado, {})
-        return datos.get('emoji', '?')
+        return datos.get('emoji', '')
     
     @staticmethod
     def obtener_nombre_estado(estado):

@@ -103,11 +103,11 @@ def configurar_tkinter_rendimiento(root):
         # Configurar buffer de eventos
         root.tk.call('wm', 'attributes', '.', '-alpha', 1.0)
         
-        print("✅ Optimizaciones de Tkinter aplicadas")
+        print("[OK] Optimizaciones de Tkinter aplicadas")
         return True
         
     except Exception as e:
-        print(f"⚠️ Error configurando Tkinter: {e}")
+        print(f"[WARNING] Error configurando Tkinter: {e}")
         return False
 
 

@@ -6,7 +6,8 @@ Reemplazan las funciones originales para evitar congelamiento con grandes volúm
 import threading
 import tkinter as tk
 from src.core.logger import registrar_error
-from src.config import CENSO_NOTA_MAX_DISPLAY, CENSO_BATCH_INSERT_SIZE, CENSO_UPDATE_UI_EVERY_N
+from src.config import CENSO_BATCH_INSERT_SIZE, CENSO_UPDATE_UI_EVERY_N
+from .censo_utils import estado_texto_color_tag, resumir_nota
 
 
 def cargar_habitantes_async(self):
@@ -69,17 +70,16 @@ def actualizar_tabla_incremental(self, habitantes):
         datos_preparados = []
         for hab in habitantes:
             activo = hab.get('activo', True)
-            estado_icono = "● Activo" if activo else "● Inactivo"
-            tag = 'activo' if activo else 'inactivo'
-            nota = hab.get('nota', '')
-            
+            estado_icono, _color, tag = estado_texto_color_tag(activo)
+            nota_resumen = resumir_nota(hab.get('nota', ''))
+
             datos_preparados.append({
                 'values': (
                     hab['folio'],
                     hab['nombre'],
                     hab.get('fecha_registro', ''),
                     estado_icono,
-                    nota[:CENSO_NOTA_MAX_DISPLAY] + '...' if len(nota) > CENSO_NOTA_MAX_DISPLAY else nota
+                    nota_resumen
                 ),
                 'tags': (tag,)
             })

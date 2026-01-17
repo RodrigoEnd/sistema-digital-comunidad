@@ -189,7 +189,7 @@ def mostrar_estadisticas(root, habitantes):
     conteo_fechas = Counter(fechas)
     
     # Mostrar estadísticas generales
-    ttk.Label(stats_frame, text="📊 GENERALES", font=('Arial', 11, 'bold')).pack(anchor=tk.W, pady=(0, 10))
+    ttk.Label(stats_frame, text="Generales", font=('Arial', 11, 'bold')).pack(anchor=tk.W, pady=(0, 10))
     
     stats_text = f"""
 Total de habitantes: {total}
@@ -203,7 +203,7 @@ Con notas: {con_notas} ({con_notas/total*100:.1f}%)
     ttk.Separator(stats_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=15)
     
     # Registros por mes
-    ttk.Label(stats_frame, text="📅 REGISTROS POR MES (últimos 6 meses)", 
+    ttk.Label(stats_frame, text="Registros por mes (últimos 6 meses)", 
              font=('Arial', 11, 'bold')).pack(anchor=tk.W, pady=(0, 10))
     
     if conteo_fechas:
@@ -230,7 +230,7 @@ Con notas: {con_notas} ({con_notas/total*100:.1f}%)
     notas_con_contenido = [h.get('nota', '') for h in habitantes if h.get('nota', '')]
     if notas_con_contenido:
         promedio_longitud = sum(len(n) for n in notas_con_contenido) / len(notas_con_contenido)
-        ttk.Label(stats_frame, text=f"📝 NOTAS", font=('Arial', 11, 'bold')).pack(anchor=tk.W, pady=(0, 5))
+        ttk.Label(stats_frame, text=f"Notas", font=('Arial', 11, 'bold')).pack(anchor=tk.W, pady=(0, 5))
         ttk.Label(stats_frame, text=f"Promedio de caracteres por nota: {promedio_longitud:.0f}", 
                  font=('Arial', 10)).pack(anchor=tk.W)
     

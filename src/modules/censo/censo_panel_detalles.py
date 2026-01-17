@@ -5,6 +5,7 @@ Muestra información completa del habitante seleccionado
 
 import tkinter as tk
 from tkinter import ttk
+from .censo_utils import estado_texto_color_tag
 
 
 class CensoPanelDetalles:
@@ -89,8 +90,7 @@ class CensoPanelDetalles:
         self.fecha_label.grid(row=2, column=1, sticky=tk.W, pady=2, padx=5)
         
         activo = habitante.get('activo', True)
-        estado_texto = "● Activo" if activo else "● Inactivo"
-        estado_color = '#4CAF50' if activo else '#F44336'
+        estado_texto, estado_color, _tag = estado_texto_color_tag(activo)
         
         ttk.Label(self.datos_frame, text="Estado:", font=('Arial', 9, 'bold')).grid(row=3, column=0, sticky=tk.W, pady=2)
         self.estado_label = ttk.Label(self.datos_frame, text=estado_texto, font=('Arial', 9), foreground=estado_color)
@@ -144,8 +144,7 @@ class CensoPanelDetalles:
         try:
             # Actualizar estado si cambió
             activo = habitante.get('activo', True)
-            estado_texto = "● Activo" if activo else "● Inactivo"
-            estado_color = '#4CAF50' if activo else '#F44336'
+            estado_texto, estado_color, _tag = estado_texto_color_tag(activo)
             
             if hasattr(self, 'estado_label'):
                 self.estado_label.config(text=estado_texto, foreground=estado_color)

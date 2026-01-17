@@ -1,0 +1,44 @@
+Resumen de mejoras propuestas para el módulo de Pagos
+Fecha: 2026-01-17
+
+* 1) Timers y formatos centralizados
+- Problema: `TIMERS.debounce_busqueda` y formatos de fecha en `pagos_constantes.py` duplican configuraciones ya presentes en `src/config.py`.
+- Mejora aplicada: `TIMERS.debounce_busqueda` y `debounce_guardado` usan `UI_DEBOUNCE_SEARCH` y `UI_DEBOUNCE_SAVE`. `PATRONES.fecha_formato` y `datetime_formato` usan `FORMATO_FECHA_EXPORT` y `FORMATO_FECHA_LOG`. `LIMITES.min_monto_pago` y `max_longitud_nombre` usan `MONTO_MINIMO` y `LONGITUD_MAXIMA_NOMBRE`. `CONFIG_INICIAL` usa `MONTO_COOPERACION_DEFECTO` y `PROYECTO_DEFECTO`.
+- Impacto: Coherencia y menor deuda técnica.
+
+* 2) Remover emojis y símbolos en textos
+- Problema: Labels, filtros, mensajes y diálogos usan emojis (🔒, ✓, ✕, 🟢, etc.).
+ - Mejora aplicada: Eliminados emojis en `pagos_constantes.py` (filtros rápidos y mensajes) y en `control_pagos.py` (diálogo de confirmación de identidad: título, icono, botones y carácter de contraseña).
+	- Adicional: Eliminados emojis y símbolos en `pagos_utilidades.py` (resumen de persona) y `pagos_estado.py` (metadatos de estados y función de emoji).
+	- Impacto: Apariencia profesional y consistencia cross-plataforma.
+
+* 3) Evitar duplicación de constantes locales
+- Problema: `LIMITES` y `PATRONES` contienen valores que pueden existir en `config`.
+ - Mejora aplicada: `LIMITES` y `PATRONES` en `pagos_constantes.py` ahora referencian `src/config.py` (montos mínimos, longitud de nombre y formatos de fecha). Se mantienen solo claves propias del módulo de pagos.
+ - Impacto: Menos duplicación y puntos únicos de cambio.
+
+* 4) Desacoplar ordenamiento y búsqueda de la UI
+- Problema: Si la búsqueda/ordenamiento lee del `TreeView`, pesa el rendimiento.
+ - Mejora aplicada: `_ordenar_tabla_por_columna()` ya no lee del `TreeView`; construye la lista en memoria según el criterio actual y ordena sin tocar `self.personas`. `actualizar_tabla()` acepta una lista opcional (filtrada/ordenada) para renderizar.
+ - Impacto: Menor acoplamiento con la UI y mejor rendimiento.
+
+* 5) Exportación y backups
+- Problema: Posible duplicación de lógica para exportar o respaldar.
+ - Mejora aplicada: `control_pagos.py` usa `ExportadorExcel` para generar el archivo en la carpeta de reportes y ahora copia el archivo a la ruta seleccionada por el usuario (se respeta el diálogo de guardado). Los backups se realizan vía `GestorBackups`.
+ - Impacto: Uso consistente de herramientas comunes y mejor UX en exportación.
+
+* 6) Folios irrepetibles
+- Problema: Se ofrecía un botón para corregir folios duplicados, pero los folios ya son irrepetibles por diseño.
+ - Mejora aplicada: Se eliminó el botón "Corregir Folios" y su flujo asociado de `control_pagos.py`.
+ - Impacto: Menos acciones confusas en la UI y menor superficie de mantenimiento.
+
+Aplicación planificada (orden seguro):
+A. Remover emojis/símbolos en `pagos_constantes.py` y `control_pagos.py`.
+B. Centralizar timers y formatos hacia `config`.
+C. Referenciar límites/validaciones desde `config` donde aplique.
+D. Revisar y corregir posibles lecturas de `TreeView` en ordenamiento/búsqueda.
+E. Verificar exportación/backups usen helpers comunes.
+
+Notas:
+- Cambios serán incrementales y marcados con asterisco cuando se apliquen.
+- Se mantendrá la funcionalidad actual y estilos modernos sin íconos/emoji.

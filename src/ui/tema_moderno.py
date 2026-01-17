@@ -323,6 +323,7 @@ ICONOS = {
     # Estado y notificaciones
     'info': 'ℹ️',
     'alerta': '⚠️',
+    'advertencia': '⚠️',
     'error': '❌',
     'exito': '✅',
     'campana': '🔔',

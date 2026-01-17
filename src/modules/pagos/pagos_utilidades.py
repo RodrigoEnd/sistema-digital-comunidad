@@ -55,15 +55,8 @@ class UtiliPagos:
     
     @staticmethod
     def obtener_emoji_estado(estado):
-        """Obtener emoji según estado"""
-        emojis = {
-            'completado': '🟢',
-            'parcial': '🟡',
-            'pendiente': '🔴',
-            'excedente': '🔵',
-            'inactivo': '⚫'
-        }
-        return emojis.get(estado, '⚪')
+        """Compatibilidad: sin emojis, devolver cadena vacía"""
+        return ""
     
     @staticmethod
     def truncar_texto(texto, max_chars=50, sufijo='...'):
@@ -189,12 +182,16 @@ class UtiliPagos:
         esperado = persona.get('monto_esperado', 100)
         pendiente = max(0, esperado - pagado)
         
-        estado_emoji = UtiliPagos.obtener_emoji_estado(
-            'completado' if pendiente <= 0 else 'parcial' if pagado > 0 else 'pendiente'
-        )
-        
+        estado_actual = 'completado' if pendiente <= 0 else 'parcial' if pagado > 0 else 'pendiente'
+        estado_texto = {
+            'completado': 'Pagado',
+            'parcial': 'Pago parcial',
+            'pendiente': 'Pendiente'
+        }.get(estado_actual, 'Desconocido')
+
         return (
-            f"{estado_emoji} {nombre}\n"
+            f"{nombre}\n"
+            f"Estado: {estado_texto}\n"
             f"Folio: {folio}\n"
             f"Pagado: {UtiliPagos.formatear_dinero(pagado)} / "
             f"Esperado: {UtiliPagos.formatear_dinero(esperado)}"

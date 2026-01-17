@@ -4,7 +4,20 @@ Organiza todos los valores de configuración reutilizables
 """
 
 import tkinter as tk
-from src.config import TEMAS, TAMAÑOS_LETRA, PASSWORD_CIFRADO, ARCHIVO_PAGOS
+from src.config import (
+    TEMAS,
+    TAMAÑOS_LETRA,
+    PASSWORD_CIFRADO,
+    ARCHIVO_PAGOS,
+    UI_DEBOUNCE_SEARCH,
+    UI_DEBOUNCE_SAVE,
+    FORMATO_FECHA_EXPORT,
+    FORMATO_FECHA_LOG,
+    MONTO_MINIMO,
+    LONGITUD_MAXIMA_NOMBRE,
+    MONTO_COOPERACION_DEFECTO,
+    PROYECTO_DEFECTO,
+)
 from src.ui.tema_moderno import FUENTES, FUENTES_DISPLAY, ESPACIADO, ICONOS
 
 CONFIG_DATOS = {
@@ -14,8 +27,8 @@ CONFIG_DATOS = {
 
 # ===== CONFIGURACIÓN INICIAL =====
 CONFIG_INICIAL = {
-    'monto_cooperacion_default': 100.0,
-    'proyecto_default': 'Proyecto Comunitario 2026',
+    'monto_cooperacion_default': MONTO_COOPERACION_DEFECTO,
+    'proyecto_default': PROYECTO_DEFECTO,
     'tamaño_letra_default': 'normal',
     'titulo_ventana_principal': 'Sistema de Control de Pagos - Proyectos Comunitarios',
 }
@@ -74,10 +87,10 @@ ESTILOS_ESTADOS = {
 # ===== FILTROS RÁPIDOS =====
 FILTROS_RAPIDOS = [
     ('Todos', 'todos'),
-    ('🟢 Al corriente', 'pagado'),
-    ('🟡 Atrasados', 'atrasado'),
-    ('🔴 Sin pagar', 'sin_pagar'),
-    ('⚫ Inactivos', 'inactivo')
+    ('Al corriente', 'pagado'),
+    ('Atrasados', 'atrasado'),
+    ('Sin pagar', 'sin_pagar'),
+    ('Inactivos', 'inactivo')
 ]
 
 # ===== ATAJOS DE TECLADO =====
@@ -107,8 +120,8 @@ PERMISOS_ACCIONES = {
 
 # ===== TIMERS Y DEBOUNCES (ms) =====
 TIMERS = {
-    'debounce_guardado': 500,
-    'debounce_busqueda': 300,
+    'debounce_guardado': UI_DEBOUNCE_SAVE,
+    'debounce_busqueda': UI_DEBOUNCE_SEARCH,
     'timeout_api': 5000,
     'watchdog_api_intervalo': 30000,  # 30 segundos
     'pulso_animacion': 100,
@@ -119,30 +132,30 @@ PATRONES = {
     'folio_local_prefix': 'LOC',
     'folio_format': 'LOC-{counter}',
     'id_cooperacion_general': 'general',
-    'fecha_formato': '%d/%m/%Y',
-    'datetime_formato': '%d/%m/%Y %H:%M:%S',
+    'fecha_formato': FORMATO_FECHA_EXPORT,
+    'datetime_formato': FORMATO_FECHA_LOG,
 }
 
 # ===== MENSAJES ESTÁNDAR =====
 MENSAJES = {
-    'sin_seleccion': '❌ Debe seleccionar una persona primero',
-    'sin_cooperacion': '❌ No hay cooperación activa seleccionada',
-    'sin_datos': '❌ No hay datos para mostrar',
-    'permiso_denegado': '🔒 Tu rol no permite realizar esta acción ({})',
-    'contrasena_requerida': '🔐 Ingrese la contraseña para modificar el monto',
-    'contrasena_incorrecta': '❌ Contraseña incorrecta',
-    'error_guardado': '❌ Error al guardar los datos',
-    'exito_guardado': '✅ Datos guardados correctamente',
-    'error_exportar': '❌ Error al exportar: {}',
-    'exito_backup': '✅ Backup creado correctamente:\n{}',
+    'sin_seleccion': 'Debe seleccionar una persona primero',
+    'sin_cooperacion': 'No hay cooperación activa seleccionada',
+    'sin_datos': 'No hay datos para mostrar',
+    'permiso_denegado': 'Tu rol no permite realizar esta acción ({})',
+    'contrasena_requerida': 'Ingrese la contraseña para modificar el monto',
+    'contrasena_incorrecta': 'Contraseña incorrecta',
+    'error_guardado': 'Error al guardar los datos',
+    'exito_guardado': 'Datos guardados correctamente',
+    'error_exportar': 'Error al exportar: {}',
+    'exito_backup': 'Backup creado correctamente:\n{}',
 }
 
 # ===== MÁXIMOS Y MÍNIMOS =====
 LIMITES = {
     'max_resultados_busqueda': 5,
     'max_backups_mantener': 10,
-    'min_monto_pago': 0.01,
-    'max_longitud_nombre': 100,
+    'min_monto_pago': MONTO_MINIMO,
+    'max_longitud_nombre': LONGITUD_MAXIMA_NOMBRE,
     'max_longitud_notas': 500,
 }
 

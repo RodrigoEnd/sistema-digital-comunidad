@@ -1,0 +1,55 @@
+Resumen de mejoras propuestas para el módulo de Censo
+Fecha: 2026-01-17
+
+* 1) Debounce y constantes
+- Problema: En `censo_habitantes._buscar_tiempo_real` se usa un valor fijo (300ms) pese a que ya existe `UI_DEBOUNCE_SEARCH` en `src/config`.
+- Mejora: Usar `UI_DEBOUNCE_SEARCH` para coherencia y configuración centralizada.
+- Impacto: Menor deuda técnica; comportamiento consistente con otros módulos.
+
+* 2) Formateo de estado y truncado de notas repetidos
+- Problema: Se repite la lógica de estado ("● Activo"/"● Inactivo" y color/tag) en `censo_optimizaciones` y `censo_panel_detalles`.
+- Mejora: Extraer a utilidades comunes (`censo_utils.estado_texto_color_tag` y `censo_utils.resumir_nota`).
+- Impacto: Menos duplicación; cambios futuros de estilo/semántica más fáciles.
+
+* 3) Ordenamiento: evitar leer desde TreeView
+- Problema: En `censo_habitantes._ordenar_columna` se reconstruye la lista consultando la vista (`tree.get_children()`), costoso y dependiente de UI.
+- Mejora: Usar `self.habitantes_filtrados` si existe; si no, `self.habitantes`.
+- Impacto: Menos acoplamiento UI/datos; mejor rendimiento.
+
+* 4) Importes dinámicos dentro de métodos
+- Problema: Import dentro de `_editar_nombre_seleccion` (`from censo_dialogos import dialogo_editar_nombre`).
+- Mejora: Importarlo arriba junto con otros diálogos y reutilizar.
+- Impacto: Menos overhead y claridad.
+
+* 5) Apertura de módulos (pagos/faenas) duplicada
+- Problema: Lógica muy similar en `abrir_control_pagos` y `abrir_registro_faenas`.
+- Mejora: Factorizar en helper privado `_abrir_modulo(script_rel, proceso_attr)` y reutilizar.
+- Impacto: Menos duplicación; mantenimiento más simple.
+
+* 6) Tooltips y estado de caché
+
+7) Estilo y textos
+* 7) Estilo y textos
+Observación: Se usaban emojis en títulos, botones, menús y secciones de estadísticas.
+Cambio aplicado: Removidos emojis en `censo_habitantes.py` (título de ventana, barra de estado, botones y menú), `censo_dialogos.py` (secciones de estadísticas), y texto de estado en `censo_utils.py`.
+Impacto: Apariencia profesional y consistente en Windows y otras plataformas.
+
+8) Preferencias de usuario
+
+9) Acceso a logs en `mostrar_historial`
+- Observación: Ruta a log está en línea y específica de Windows.
+- Mejora opcional: Centralizar en `config` o `core/logger` una función para obtener ruta del log.
+
+Aplicación planificada (orden seguro):
+A. Crear `censo_utils.py` con utilidades comunes (estado/nota).
+B. Reemplazar usos en `censo_optimizaciones.py` y `censo_panel_detalles.py`.
+C. Usar `UI_DEBOUNCE_SEARCH` en `_buscar_tiempo_real`.
+D. Refactorizar `_ordenar_columna` para operar sobre `habitantes_filtrados`.
+E. Mover import de `dialogo_editar_nombre` al inicio y eliminar import interno.
+F. Factorizar apertura de módulos en helper único.
+G. Validación: correr análisis de errores y pruebas básicas.
+
+Notas:
+- Se mantendrá interfaz y comportamiento visibles.
+- Cambios serán incrementales para minimizar riesgos.
+- Si se requiere, se documentará cualquier API tocada en este archivo.

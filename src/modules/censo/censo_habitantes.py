@@ -19,7 +19,7 @@ proyecto_raiz = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 if proyecto_raiz not in sys.path:
     sys.path.insert(0, proyecto_raiz)
 
-from src.config import TEMAS, CENSO_DEBOUNCE_MS, CENSO_COLUMNAS, CENSO_COLUMNAS_ANCHOS, CENSO_NOTA_MAX_DISPLAY, UI_DEBOUNCE_SEARCH
+from src.config import TEMAS, CENSO_DEBOUNCE_MS, CENSO_COLUMNAS, CENSO_COLUMNAS_ANCHOS, CENSO_NOTA_MAX_DISPLAY, UI_DEBOUNCE_SEARCH, CENSO_INDICADORES_CACHE_TIME
 from src.ui.estilos_globales import TEMA_GLOBAL
 from src.ui.tema_moderno import FUENTES
 from src.core.logger import registrar_operacion, registrar_error
@@ -28,7 +28,7 @@ from src.core.gestor_datos_global import obtener_gestor
 from src.modules.indicadores.indicadores_estado import calcular_estado_habitante
 
 # Imports de módulos internos del censo
-from src.modules.censo.censo_dialogos import agregar_habitante, dialogo_editar_nota, mostrar_estadisticas, mostrar_historial, busqueda_avanzada
+from src.modules.censo.censo_dialogos import agregar_habitante, dialogo_editar_nota, mostrar_estadisticas, mostrar_historial, busqueda_avanzada, dialogo_editar_nombre
 from src.modules.censo.censo_panel_detalles import CensoPanelDetalles
 from src.modules.censo.censo_operaciones import aplicar_filtros, ordenar_columna, actualizar_estado_habitante, colocar_nota_habitante, editar_nombre_habitante
 from src.modules.censo.censo_exportacion import exportar_excel
@@ -40,7 +40,7 @@ from src.modules.censo.censo_optimizaciones import cargar_habitantes_async, actu
 class SistemaCensoHabitantes:
     def __init__(self, root):
         self.root = root
-        self.root.title("📋 Sistema de Censo de Habitantes - Comunidad San Pablo")
+        self.root.title("Sistema de Censo de Habitantes - Comunidad San Pablo")
         
         # Optimizaciones de rendimiento para la ventana (sin operaciones pesadas en UI)
         self.root.resizable(True, True)
@@ -215,7 +215,7 @@ class SistemaCensoHabitantes:
         fecha_actual = datetime.now().strftime("%d/%m/%Y")
         ttk.Label(header_frame, text=f"Fecha: {fecha_actual}").grid(row=1, column=0, sticky=tk.W, padx=5)
         ttk.Button(header_frame, text="Abrir Control de Pagos", command=self.abrir_control_pagos, width=22).grid(row=1, column=1, padx=5)
-        ttk.Button(header_frame, text="📊 Estadísticas", command=self._mostrar_estadisticas, width=18).grid(row=1, column=2, padx=5)
+        ttk.Button(header_frame, text="Estadísticas", command=self._mostrar_estadisticas, width=18).grid(row=1, column=2, padx=5)
         
         self.total_label = ttk.Label(header_frame, text="Total Habitantes: 0", font=('Arial', 11, 'bold'))
         self.total_label.grid(row=1, column=3, sticky=tk.E, padx=5)
@@ -279,10 +279,10 @@ class SistemaCensoHabitantes:
         acciones = ttk.Frame(toolbar)
         acciones.grid(row=1, column=0, columnspan=2, sticky=tk.W, pady=(8,0))
         ttk.Button(acciones, text="Limpiar", command=self._limpiar_busqueda).pack(side=tk.LEFT, padx=(0,5))
-        ttk.Button(acciones, text="🔍 Búsqueda Avanzada", command=self._busqueda_avanzada).pack(side=tk.LEFT, padx=5)
+        ttk.Button(acciones, text="Búsqueda Avanzada", command=self._busqueda_avanzada).pack(side=tk.LEFT, padx=5)
         ttk.Button(acciones, text="Agregar Habitante", command=self._agregar_habitante).pack(side=tk.LEFT, padx=5)
         ttk.Button(acciones, text="Actualizar Lista", command=self.cargar_habitantes).pack(side=tk.LEFT, padx=5)
-        ttk.Button(acciones, text="📊 Exportar a Excel", command=self._exportar_excel).pack(side=tk.LEFT, padx=5)
+        ttk.Button(acciones, text="Exportar a Excel", command=self._exportar_excel).pack(side=tk.LEFT, padx=5)
 
         # Controles de visibilidad
         controles = ttk.Frame(toolbar)
@@ -330,14 +330,14 @@ class SistemaCensoHabitantes:
 
         # Menú contextual
         self.menu_contextual = tk.Menu(self.root, tearoff=0)
-        self.menu_contextual.add_command(label="✏️  Editar Nombre", command=self._editar_nombre_seleccion)
+        self.menu_contextual.add_command(label="Editar Nombre", command=self._editar_nombre_seleccion)
         self.menu_contextual.add_separator()
         self.menu_contextual.add_command(label="Marcar como activo", command=lambda: self._actualizar_estado_seleccion(True))
         self.menu_contextual.add_command(label="Marcar como inactivo", command=lambda: self._actualizar_estado_seleccion(False))
         self.menu_contextual.add_separator()
         self.menu_contextual.add_command(label="Colocar nota", command=self._colocar_nota_seleccion)
         self.menu_contextual.add_separator()
-        self.menu_contextual.add_command(label="🗑️  Eliminar Habitante", command=self._eliminar_habitante_seleccion)
+        self.menu_contextual.add_command(label="Eliminar Habitante", command=self._eliminar_habitante_seleccion)
         self.tree.bind('<Button-3>', self._mostrar_menu_contextual)
         
         # Eventos
@@ -406,7 +406,7 @@ class SistemaCensoHabitantes:
             
             ultima_actualizacion = datetime.now().strftime("%H:%M:%S")
             
-            texto_estado = f"📊 Total: {len(self.habitantes)} | ✓ Activos: {activos} | ✗ Inactivos: {inactivos} | 📝 Con notas: {con_notas} | Última actualización: {ultima_actualizacion}"
+            texto_estado = f"Total: {len(self.habitantes)} | Activos: {activos} | Inactivos: {inactivos} | Con notas: {con_notas} | Última actualización: {ultima_actualizacion}"
             
             self.status_label.config(text=texto_estado)
         except Exception as e:
@@ -435,7 +435,7 @@ class SistemaCensoHabitantes:
         # Programar nueva búsqueda con debounce (300ms)
         self._optimizer.debounce.debounce(
             f"censo_search_{id(self)}",
-            300,  # Reducido de 500ms a 300ms para mejor respuesta
+            UI_DEBOUNCE_SEARCH,
             self._ejecutar_busqueda_async,
             criterio,
             filtro
@@ -551,14 +551,9 @@ class SistemaCensoHabitantes:
             self.columna_orden = columna
             self.orden_reversa = False
         
-        # Obtener lista actual mostrada
-        lista_actual = []
-        for item_id in self.tree.get_children():
-            valores = self.tree.item(item_id, 'values')
-            folio = valores[0]
-            habitante = next((h for h in self.habitantes if h['folio'] == folio), None)
-            if habitante:
-                lista_actual.append(habitante)
+        # Usar la fuente de datos actual en memoria (evitar leer desde la UI)
+        lista_actual = (self.habitantes_filtrados if hasattr(self, 'habitantes_filtrados') and self.habitantes_filtrados 
+                        else self.habitantes)
         
         # Ordenar
         lista_ordenada = ordenar_columna(lista_actual, columna, self.orden_reversa)
@@ -624,7 +619,6 @@ class SistemaCensoHabitantes:
         
         habitante = next((h for h in self.habitantes if h['folio'] == folio), None)
         if habitante:
-            from src.modules.censo.censo_dialogos import dialogo_editar_nombre
             dialogo_editar_nombre(self.root, habitante, self.gestor, self.cargar_habitantes)
     
     def _cambiar_estado_seleccionado(self, folio, activo):
@@ -725,9 +719,9 @@ class SistemaCensoHabitantes:
             if not hasattr(self, 'canvas_pagos') or not hasattr(self, 'canvas_faenas'):
                 return
 
-            # Usar caché reciente
+            # Usar caché reciente (TTL configurable)
             import time
-            if self._indicadores_cache_result and time.time() - self._indicadores_cache_time < 30:
+            if self._indicadores_cache_result and time.time() - self._indicadores_cache_time < CENSO_INDICADORES_CACHE_TIME:
                 pagos, faenas = self._indicadores_cache_result
                 self._pintar_indicadores(pagos, faenas)
                 return
@@ -885,57 +879,41 @@ class SistemaCensoHabitantes:
     
     def abrir_control_pagos(self):
         """Abre el módulo de control de pagos"""
-        if self.proceso_control_pagos and self.proceso_control_pagos.poll() is None:
-            messagebox.showinfo("Ventana abierta", "El módulo de pagos ya está abierto")
-            return
-        
-        try:
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            proyecto_raiz = os.path.abspath(os.path.join(script_dir, "..", "..", ".."))
-            pagos_script = os.path.join(proyecto_raiz, "src", "modules", "pagos", "control_pagos.py")
-            
-            if os.path.exists(pagos_script):
-                if sys.platform == 'win32':
-                    pythonw_exe = sys.executable.replace("python.exe", "pythonw.exe")
-                    if os.path.exists(pythonw_exe):
-                        self.proceso_control_pagos = subprocess.Popen([pythonw_exe, pagos_script])
-                    else:
-                        CREATE_NO_WINDOW = 0x08000000
-                        self.proceso_control_pagos = subprocess.Popen([sys.executable, pagos_script],
-                                                                     creationflags=CREATE_NO_WINDOW)
-                else:
-                    self.proceso_control_pagos = subprocess.Popen([sys.executable, pagos_script])
-            else:
-                messagebox.showerror("Error", f"No se encontró el módulo de pagos en: {pagos_script}")
-        except Exception as e:
-            messagebox.showerror("Error", f"No se pudo abrir control de pagos: {e}")
+        self._abrir_modulo_rel("src/modules/pagos/control_pagos.py", proceso_attr="proceso_control_pagos")
     
     def abrir_registro_faenas(self):
         """Abre el módulo de registro de faenas"""
-        if self.proceso_control_faenas and self.proceso_control_faenas.poll() is None:
-            messagebox.showinfo("Ventana abierta", "El módulo de faenas ya está abierto")
+        self._abrir_modulo_rel("src/modules/faenas/control_faenas.py", proceso_attr="proceso_control_faenas")
+
+    def _abrir_modulo_rel(self, rel_path, proceso_attr):
+        """Helper para abrir un módulo por ruta relativa al proyecto raiz"""
+        proceso_actual = getattr(self, proceso_attr, None)
+        if proceso_actual and proceso_actual.poll() is None:
+            messagebox.showinfo("Ventana abierta", "El módulo ya está abierto")
             return
-        
+
         try:
             script_dir = os.path.dirname(os.path.abspath(__file__))
             proyecto_raiz = os.path.abspath(os.path.join(script_dir, "..", "..", ".."))
-            faenas_script = os.path.join(proyecto_raiz, "src", "modules", "faenas", "control_faenas.py")
-            
-            if os.path.exists(faenas_script):
+            script_absoluto = os.path.join(proyecto_raiz, *rel_path.split('/'))
+
+            if os.path.exists(script_absoluto):
                 if sys.platform == 'win32':
                     pythonw_exe = sys.executable.replace("python.exe", "pythonw.exe")
                     if os.path.exists(pythonw_exe):
-                        self.proceso_control_faenas = subprocess.Popen([pythonw_exe, faenas_script])
+                        nuevo_proceso = subprocess.Popen([pythonw_exe, script_absoluto])
                     else:
                         CREATE_NO_WINDOW = 0x08000000
-                        self.proceso_control_faenas = subprocess.Popen([sys.executable, faenas_script],
-                                                                      creationflags=CREATE_NO_WINDOW)
+                        nuevo_proceso = subprocess.Popen([sys.executable, script_absoluto],
+                                                         creationflags=CREATE_NO_WINDOW)
                 else:
-                    self.proceso_control_faenas = subprocess.Popen([sys.executable, faenas_script])
+                    nuevo_proceso = subprocess.Popen([sys.executable, script_absoluto])
+
+                setattr(self, proceso_attr, nuevo_proceso)
             else:
-                messagebox.showerror("Error", f"No se encontró el módulo de faenas en: {faenas_script}")
+                messagebox.showerror("Error", f"No se encontró el módulo en: {script_absoluto}")
         except Exception as e:
-            messagebox.showerror("Error", f"No se pudo abrir registro de faenas: {e}")
+            messagebox.showerror("Error", f"No se pudo abrir el módulo: {e}")
 
 
 def main():

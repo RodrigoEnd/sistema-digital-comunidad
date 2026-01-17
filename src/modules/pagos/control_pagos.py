@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import os
+import shutil
 from datetime import datetime
 import subprocess
 import sys
@@ -105,6 +106,11 @@ class SistemaControlPagos:
 
         # Configurar estilos iniciales
         self.configurar_estilos()
+        
+        # BUGFIX: Inicializar gestor de personas tempranamente
+        from src.modules.pagos.pagos_gestor_personas import GestorPersonas
+        self.gestor_personas = GestorPersonas()
+        self.gestor_personas.cargar_personas(self.personas)
         
         self.nombre_visible = tk.BooleanVar(value=True)
         self.folio_visible = tk.BooleanVar(value=True)
@@ -281,7 +287,7 @@ class SistemaControlPagos:
             return False
         
         dialog = tk.Toplevel(self.root)
-        dialog.title("🔒 Confirmar Identidad")
+        dialog.title("Confirmar Identidad")
         dialog.geometry("450x300")
         dialog.transient(self.root)
         dialog.grab_set()
@@ -299,8 +305,8 @@ class SistemaControlPagos:
         header.pack(fill=tk.X)
         header.pack_propagate(False)
         
-        tk.Label(header, text="🔒", font=('Segoe UI', 32),
-                bg='#e67e22', fg='#ffffff').pack(pady=15)
+        tk.Label(header, text="", font=('Segoe UI', 32),
+            bg='#e67e22', fg='#ffffff').pack(pady=15)
         
         # Contenido
         content = tk.Frame(dialog, bg=self.tema_global.get('bg_principal', '#ffffff'))
@@ -326,7 +332,7 @@ class SistemaControlPagos:
         pass_frame = tk.Frame(content, bg=self.tema_global.get('bg_principal', '#ffffff'))
         pass_frame.pack(fill=tk.X, pady=(0, 20))
         
-        pass_entry = tk.Entry(pass_frame, show="●", width=35, font=('Arial', 11),
+        pass_entry = tk.Entry(pass_frame, show="*", width=35, font=('Arial', 11),
                              bg=self.tema_global.get('input_bg', '#ffffff'),
                              fg=self.tema_global.get('fg_principal', '#333333'),
                              relief=tk.SOLID, bd=1, insertbackground='#e67e22')
@@ -376,14 +382,14 @@ class SistemaControlPagos:
         btn_frame = tk.Frame(content, bg=self.tema_global.get('bg_principal', '#ffffff'))
         btn_frame.pack(fill=tk.X, pady=(0, 0))
         
-        btn_verificar = tk.Button(btn_frame, text="✓ Verificar", command=verificar,
+        btn_verificar = tk.Button(btn_frame, text="Verificar", command=verificar,
                                  bg='#e67e22', fg='#ffffff',
                                  font=('Arial', 11, 'bold'), padx=30, pady=10,
                                  relief=tk.FLAT, bd=0, cursor='hand2',
                                  activebackground='#d35400')
         btn_verificar.pack(side=tk.LEFT, padx=(0, 10), fill=tk.X, expand=True)
         
-        btn_cancelar = tk.Button(btn_frame, text="✕ Cancelar", command=dialog.destroy,
+        btn_cancelar = tk.Button(btn_frame, text="Cancelar", command=dialog.destroy,
                                 bg=self.tema_global.get('bg_secundario', '#f0f0f0'),
                                 fg=self.tema_global.get('fg_principal', '#333333'),
                                 font=('Arial', 11), padx=30, pady=10,
@@ -505,6 +511,10 @@ class SistemaControlPagos:
                     cooperacion_activa = coop
                     self.coop_activa_id = coop_id
             
+            print(f"[DEBUG] Cooperaciones cargadas: {len(self.cooperaciones)}")
+            for c in self.cooperaciones:
+                print(f"  - {c.get('nombre')} (ID: {c.get('id')}, Activa: {c.get('activa')})")
+            
             # Si no hay cooperación activa pero existen, activar la primera
             if not cooperacion_activa and self.cooperaciones:
                 self.coop_activa_id = self.cooperaciones[0]['id']
@@ -512,12 +522,16 @@ class SistemaControlPagos:
                 self.proyecto_actual = self.cooperaciones[0]['proyecto']
                 self.cooperacion_actual = self.cooperaciones[0]['nombre']
                 self.monto_cooperacion = self.cooperaciones[0]['monto_cooperacion']
+                print(f"[DEBUG] Activando primera cooperación: {self.cooperacion_actual}")
             elif cooperacion_activa:
                 self.personas = cooperacion_activa['personas']
                 self.proyecto_actual = cooperacion_activa['proyecto']
                 self.cooperacion_actual = cooperacion_activa['nombre']
                 self.monto_cooperacion = cooperacion_activa['monto_cooperacion']
+                print(f"[DEBUG] Cooperación activa: {self.cooperacion_actual}")
             else:
+                # No hay cooperaciones, crear valores por defecto
+                print("[DEBUG] No hay cooperaciones en BD")
                 self.personas = []
                 self.monto_cooperacion = 300.0
         
@@ -614,16 +628,53 @@ class SistemaControlPagos:
         self.proyecto_var.set(self.proyecto_actual)
         self.monto_var.set(self.monto_cooperacion)
 
+    def _guardar_cooperacion_en_bd(self, cooperacion):
+        """Persistir cambios de la cooperación activa en SQLite"""
+        if not cooperacion or 'id' not in cooperacion:
+            return False
+        try:
+            cursor = self.bd.conexion.cursor()
+            cursor.execute(
+                """
+                UPDATE cooperaciones
+                SET nombre = ?, proyecto = ?, monto_cooperacion = ?, activa = ?
+                WHERE id = ?
+                """,
+                (
+                    cooperacion.get('nombre', 'Cooperación'),
+                    cooperacion.get('proyecto', ''),
+                    cooperacion.get('monto_cooperacion', 0),
+                    int(cooperacion.get('activa', True)),
+                    cooperacion['id'],
+                ),
+            )
+            self.bd.conexion.commit()
+            return True
+        except Exception as e:
+            registrar_error('control_pagos', '_guardar_cooperacion_en_bd', str(e))
+            return False
+
     def refrescar_selector_cooperacion(self, seleccionar_activa=True):
         """BUGFIX: Refrescar selector y disparar cambio de cooperación manualmente si es necesario"""
+        if not hasattr(self, 'coop_selector'):
+            print("[DEBUG] coop_selector no existe todavía")
+            return
+        
         nombres = [c.get('nombre', 'Sin nombre') for c in self.cooperaciones]
+        print(f"[DEBUG] Actualizando selector con {len(nombres)} cooperaciones: {nombres}")
         self.coop_selector['values'] = nombres
+        
         if seleccionar_activa:
             activa = self.obtener_cooperacion_activa()
             if activa and activa.get('nombre') in nombres:
                 idx = nombres.index(activa['nombre'])
-                # BUGFIX: No disparar evento automáticamente, hacerlo manualmente después
+                print(f"[DEBUG] Seleccionando cooperación activa en índice {idx}: {activa.get('nombre')}")
+                # BUGFIX: Establecer el índice Y forzar el valor visible
                 self.coop_selector.current(idx)
+                # BUGFIX CRÍTICO: Asegurar que el valor se muestre en el combobox
+                self.coop_selector.set(activa.get('nombre'))
+            else:
+                print(f"[DEBUG] No se encontró cooperación activa en la lista")
 
     def on_cambio_cooperacion(self, event=None):
         """BUGFIX: Cambiar a una cooperación diferente - sincronización COMPLETA"""
@@ -671,6 +722,20 @@ class SistemaControlPagos:
     def nueva_cooperacion(self):
         """BUGFIX: Crear nueva cooperación con sincronización completa"""
         def on_cooperacion_creada(nueva):
+            # Insertar en BD primero
+            coop_id_bd = self.bd.crear_cooperacion_bd(
+                nueva['nombre'],
+                nueva['proyecto'],
+                nueva['monto_cooperacion']
+            )
+            
+            if coop_id_bd is None:
+                messagebox.showerror("Error", "No se pudo guardar la cooperación en BD")
+                return
+            
+            # Usar ID de BD (entero) en lugar del string generado
+            nueva['id'] = coop_id_bd
+            
             self.cooperaciones.append(nueva)
             self.coop_activa_id = nueva['id']
             self.proyecto_actual = nueva['proyecto']
@@ -712,6 +777,9 @@ class SistemaControlPagos:
             self.monto_cooperacion = cooperacion['monto_cooperacion']
             self.proyecto_actual = cooperacion['proyecto']
             self.cooperacion_actual = cooperacion.get('nombre', 'Cooperación')
+            
+            # Guardar cambios en BD inmediatamente
+            self._guardar_cooperacion_en_bd(cooperacion)
             
             # BUGFIX: Reaplica para actualizar historial y UI
             self.aplicar_cooperacion_activa()
@@ -798,70 +866,6 @@ class SistemaControlPagos:
             if mostrar_mensaje:
                 messagebox.showerror("Error", f"No se pudo sincronizar con el censo: {e}")
     
-    def corregir_folios(self):
-        """Detecta y corrige folios duplicados sincronizando con el censo"""
-        if not self._tiene_permiso('editar'):
-            return
-            
-        from src.core.utilidades import detectar_folios_duplicados, corregir_folios_duplicados
-        
-        if not self.personas:
-            messagebox.showwarning("Advertencia", "No hay personas en la cooperación actual")
-            return
-        
-        # Detectar duplicados
-        duplicados = detectar_folios_duplicados(self.personas)
-        
-        if not duplicados:
-            messagebox.showinfo("✓ Sin Problemas", 
-                f"No se encontraron folios duplicados\n\n"
-                f"Total personas revisadas: {len(self.personas)}")
-            return
-        
-        # Mostrar información de duplicados
-        mensaje_duplicados = "⚠️ FOLIOS DUPLICADOS ENCONTRADOS\n\n"
-        total_afectados = 0
-        for folio, nombres in duplicados.items():
-            mensaje_duplicados += f"Folio {folio} ({len(nombres)} personas):\n"
-            for nombre in nombres:
-                mensaje_duplicados += f"  • {nombre}\n"
-                total_afectados += 1
-            mensaje_duplicados += "\n"
-        
-        mensaje_duplicados += f"Total de personas afectadas: {total_afectados}\n\n"
-        mensaje_duplicados += "¿Desea corregir automáticamente sincronizando con el censo?"
-        
-        if not messagebox.askyesno("Folios Duplicados Detectados", mensaje_duplicados):
-            return
-        
-        # Corregir usando gestor centralizado
-        gestor = obtener_gestor()
-        resultado = gestor.sincronizar_folios(self.personas)
-        
-        if resultado['exito']:
-            # Guardar cambios inmediatamente
-            self.guardar_datos(mostrar_alerta=False, inmediato=True)
-            self.actualizar_tabla()
-            
-            mensaje = f"✓ CORRECCIÓN COMPLETADA\n\n"
-            mensaje += f"{resultado['mensaje']}\n\n"
-            mensaje += f"Duplicados encontrados: {resultado.get('duplicados_encontrados', 0)}\n"
-            mensaje += f"Folios corregidos: {resultado.get('corregidos', 0)}"
-            
-            if resultado.get('errores'):
-                mensaje += f"\n⚠️ Errores encontrados: {len(resultado['errores'])}"
-            
-            # Registrar operación
-            registrar_operacion('CORREGIR_FOLIOS', 'Folios duplicados corregidos', {
-                'duplicados': resultado.get('duplicados_encontrados', 0),
-                'corregidos': resultado.get('corregidos', 0),
-                'cooperacion': self.cooperacion_actual
-            }, self.usuario_actual['nombre'] if self.usuario_actual else 'Sistema')
-            
-            messagebox.showinfo("Corrección Completada", mensaje)
-        else:
-            messagebox.showerror("Error", f"Error al corregir folios:\n{resultado.get('error', 'Desconocido')}")
-
     def refrescar_interfaz_cooperacion(self):
         """BUGFIX: Actualiza todos los elementos UI cuando cambia cooperación"""
         coop = self.obtener_cooperacion_activa()
@@ -881,6 +885,10 @@ class SistemaControlPagos:
             self.proyecto_var.set(self.proyecto_actual)
         if hasattr(self, 'total_personas_label'):
             self.total_personas_label.config(text=str(len(self.personas)))
+        
+        # BUGFIX CRÍTICO: Actualizar el selector de cooperación con el nombre actual
+        if hasattr(self, 'coop_selector'):
+            self.coop_selector.set(self.cooperacion_actual)
         
         # Actualizar título si existe
         if hasattr(self, 'titulo_coop_label'):
@@ -935,8 +943,20 @@ class SistemaControlPagos:
         window_id = canvas.create_window((0, 0), window=content_container, anchor='nw')
 
         # Ajuste de scroll para ver toda la pantalla y mantener ancho completo
-        content_container.bind('<Configure>', lambda e: canvas.configure(scrollregion=canvas.bbox('all')))
-        canvas.bind('<Configure>', lambda e: canvas.itemconfig(window_id, width=e.width))
+        def _ajustar_tamano_canvas(event=None):
+            # Usar el alto solicitado para scroll y el alto del canvas para expandir cuando hay poco contenido
+            content_container.update_idletasks()
+            required_height = content_container.winfo_reqheight()
+            visible_height = canvas.winfo_height()
+            target_height = max(required_height, visible_height)
+            canvas.itemconfig(window_id, width=canvas.winfo_width(), height=target_height)
+            canvas.configure(scrollregion=canvas.bbox('all'))
+
+        # Guardar referencia para recalcular al alternar pantalla completa
+        self._ajustar_tamano_canvas = _ajustar_tamano_canvas
+
+        content_container.bind('<Configure>', _ajustar_tamano_canvas)
+        canvas.bind('<Configure>', _ajustar_tamano_canvas)
         
         # Scroll del canvas solo cuando el cursor está sobre él
         def _on_canvas_scroll(event):
@@ -975,10 +995,11 @@ class SistemaControlPagos:
                 bg=tema_visual.get('card_bg', tema_visual['bg_secundario']),
                 fg=tema_visual['fg_secundario']).grid(row=0, column=0, sticky=tk.W, padx=(0, ESPACIADO['sm']))
         
-        self.proyecto_var = tk.StringVar(value="Proyecto Comunitario 2026")
+        # Usar la variable existente inicializada con el valor por defecto/config
+        self.proyecto_var.set(self.proyecto_actual)
         proyecto_entry = tk.Entry(info_content, textvariable=self.proyecto_var, font=FUENTES['normal'],
-                                  bg=tema_visual['input_bg'], fg=tema_visual['fg_principal'],
-                                  relief=tk.FLAT, bd=1, width=40)
+                      bg=tema_visual['input_bg'], fg=tema_visual['fg_principal'],
+                      relief=tk.FLAT, bd=1, width=40)
         proyecto_entry.grid(row=0, column=1, sticky=(tk.W, tk.E), padx=(0, ESPACIADO['lg']))
         
         tk.Label(info_content, text="Fecha:", font=FUENTES['normal'],
@@ -1174,11 +1195,6 @@ class SistemaControlPagos:
         btn_sync.pack(side=tk.LEFT, padx=(0, ESPACIADO['sm']))
         TooltipModerno(btn_sync, "Sincronizar personas con el sistema de censo", tema_visual)
         
-        btn_folios = BotonModerno(btn_row2, f"{ICONOS['herramientas']} Corregir Folios", tema=tema_visual, tipo='warning',
-                    command=self.corregir_folios)
-        btn_folios.pack(side=tk.LEFT, padx=(0, ESPACIADO['sm']))
-        TooltipModerno(btn_folios, "Detectar y corregir folios duplicados automáticamente", tema_visual)
-        
         btn_excel = BotonModerno(btn_row2, f"{ICONOS['exportar']} Exportar Excel", tema=tema_visual, tipo='ghost',
                     command=self.exportar_excel)
         btn_excel.pack(side=tk.LEFT, padx=(0, ESPACIADO['sm']))
@@ -1268,7 +1284,14 @@ class SistemaControlPagos:
         self.tree.bind('<Button-1>', self._on_tree_heading_click)  # MEJORA 4: Clic en header para ordenar
         
         self.actualizar_visibilidad_columnas()
-        self.refrescar_selector_cooperacion()
+        
+        # BUGFIX: Actualizar selector de cooperaciones con los datos cargados
+        self.refrescar_selector_cooperacion(seleccionar_activa=True)
+        
+        # BUGFIX: Forzar actualización del valor visible en el selector
+        if self.cooperaciones and self.cooperacion_actual:
+            self.coop_selector.set(self.cooperacion_actual)
+        
         self.refrescar_interfaz_cooperacion()
         self.sincronizar_coop_con_censo(mostrar_mensaje=False)
         
@@ -1357,9 +1380,10 @@ class SistemaControlPagos:
                 # Asegurar que el contenedor se expanda completamente
                 if hasattr(self, 'content_container'):
                     self.content_container.columnconfigure(0, weight=1)
-                    self.content_container.rowconfigure(0, weight=0)  # info panel
-                    self.content_container.rowconfigure(1, weight=0)  # actions panel
-                    self.content_container.rowconfigure(2, weight=1)  # tabla - peso 1 para expandir
+                    self.content_container.columnconfigure(1, weight=1)
+                    self.content_container.rowconfigure(0, weight=1)  # tabla en primera fila
+                    self.content_container.rowconfigure(1, weight=0)
+                    self.content_container.rowconfigure(2, weight=0)
         else:
             # Restaurar vista normal
             if hasattr(self, 'info_panel'):
@@ -1374,7 +1398,15 @@ class SistemaControlPagos:
                 self.table_panel.grid(row=2, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S))
                 # Restaurar pesos originales
                 if hasattr(self, 'content_container'):
+                    self.content_container.columnconfigure(0, weight=1)
+                    self.content_container.columnconfigure(1, weight=1)
+                    self.content_container.rowconfigure(0, weight=0)
+                    self.content_container.rowconfigure(1, weight=0)
                     self.content_container.rowconfigure(2, weight=1)
+
+        # Recalcular tamaño del canvas tras cambiar la disposición
+        if hasattr(self, '_ajustar_tamano_canvas'):
+            self._ajustar_tamano_canvas()
         
     def sincronizar_con_censo(self, nombre):
         """Sincronizar persona con la base de datos de censo - buscar/crear folio permanente"""
@@ -1454,6 +1486,8 @@ class SistemaControlPagos:
             coop = self.obtener_cooperacion_activa()
             if coop:
                 coop['monto_cooperacion'] = nuevo_monto
+                # Guardar cambio inmediatamente en BD
+                self._guardar_cooperacion_en_bd(coop)
             
             # Actualizar monto_esperado de todas las personas existentes
             num_personas_afectadas = len(self.personas)
@@ -1496,27 +1530,86 @@ class SistemaControlPagos:
             self.monto_var.set(self.monto_cooperacion)
     
     def agregar_persona(self):
+        """Agregar nueva persona a la cooperación activa"""
         if not self._tiene_permiso('crear'):
             return
         
-        def on_persona_agregada(persona):
-            self.personas.append(persona)
-            self.actualizar_tabla()
-            self.actualizar_totales()
-            self.guardar_datos(mostrar_alerta=False)
+        # BUGFIX: Verificar que gestor_personas esté inicializado
+        if not hasattr(self, 'gestor_personas'):
+            from src.modules.pagos.pagos_gestor_personas import GestorPersonas
+            self.gestor_personas = GestorPersonas()
+            self.gestor_personas.cargar_personas(self.personas)
         
-        DialogoAgregarPersona.mostrar(
-            parent=self.root,
-            monto_cooperacion=self.monto_cooperacion,
-            cooperacion_actual=self.coop_selector.get() or 'Actual',
-            gestor_personas=self.gestor_personas,
-            gestor_historial=self.gestor_historial,
-            usuario_actual=self.usuario_actual,
-            callback_sincronizar_censo=self.sincronizar_con_censo,
-            callback_generar_folio=self.generar_folio_local,
-            callback_ok=on_persona_agregada,
-            tema_global=self.tema_global
-        )
+        # BUGFIX: Verificar que hay una cooperación activa antes de abrir el diálogo
+        if not self.coop_activa_id:
+            messagebox.showerror("Error", "No hay una cooperación activa seleccionada.\nPor favor, crea o selecciona una cooperación primero.")
+            return
+        
+        def on_persona_agregada(persona):
+            try:
+                # Validar que hay una cooperación activa
+                if not self.coop_activa_id:
+                    messagebox.showerror("Error", "No hay una cooperación activa seleccionada")
+                    return
+                
+                # Primero, obtener o crear habitante en BD
+                habitante = self.gestor.obtener_habitante_por_folio(persona['folio'])
+                if not habitante:
+                    # Crear habitante si no existe
+                    habitante_id, msg = self.gestor.crear_habitante(persona['folio'], persona['nombre'])
+                    if habitante_id is None:
+                        messagebox.showerror("Error", f"No se pudo crear habitante: {msg}")
+                        return
+                else:
+                    habitante_id = habitante.get('id')
+                
+                # Insertar persona en cooperación en BD
+                persona_coop_id = self.bd.agregar_persona_coop_bd(
+                    self.coop_activa_id,
+                    habitante_id,
+                    persona['monto_esperado'],
+                    persona.get('notas', '')
+                )
+                
+                if persona_coop_id is None:
+                    messagebox.showerror("Error", "No se pudo agregar la persona a la cooperación en BD")
+                    return
+                
+                # Agregar ID de relación a la persona para referencia futura
+                persona['persona_coop_id'] = persona_coop_id
+                persona['id'] = habitante_id
+                
+                self.personas.append(persona)
+                self.actualizar_tabla()
+                self.actualizar_totales()
+                self.guardar_datos(mostrar_alerta=False)
+                messagebox.showinfo("Éxito", f"Persona {persona['nombre']} agregada correctamente")
+                
+            except Exception as e:
+                registrar_error('control_pagos', 'on_persona_agregada', str(e))
+                messagebox.showerror("Error", f"Error al agregar persona: {str(e)}")
+        
+        try:
+            # BUGFIX: Asegurar que el nombre de cooperación esté disponible
+            nombre_coop = self.coop_selector.get() if hasattr(self, 'coop_selector') else self.cooperacion_actual
+            if not nombre_coop:
+                nombre_coop = 'Actual'
+            
+            DialogoAgregarPersona.mostrar(
+                parent=self.root,
+                monto_cooperacion=self.monto_cooperacion,
+                cooperacion_actual=nombre_coop,
+                gestor_personas=self.gestor_personas,
+                gestor_historial=self.gestor_historial,
+                usuario_actual=self.usuario_actual,
+                callback_sincronizar_censo=self.sincronizar_con_censo,
+                callback_generar_folio=self.generar_folio_local,
+                callback_ok=on_persona_agregada,
+                tema_global=self.tema_global
+            )
+        except Exception as e:
+            registrar_error('control_pagos', 'agregar_persona', str(e))
+            messagebox.showerror("Error", f"Error al abrir diálogo de agregar persona:\n{str(e)}")
     
     def editar_persona(self):
         if not self._tiene_permiso('editar'):
@@ -1540,7 +1633,30 @@ class SistemaControlPagos:
             return
         
         def on_persona_editada(persona, cambios):
-            # Guardar datos inmediatamente
+            # Actualizar en BD si existen cambios
+            persona_coop_id = persona.get('persona_coop_id')
+            if persona_coop_id and cambios:
+                # Preparar updates solo para campos que existen en BD
+                actualizar_bd = {}
+                if 'monto_esperado' in cambios:
+                    actualizar_bd['monto_esperado'] = cambios['monto_esperado']
+                if 'estado' in cambios:
+                    actualizar_bd['estado'] = cambios['estado']
+                if 'notas' in cambios:
+                    actualizar_bd['notas'] = cambios['notas']
+                
+                if actualizar_bd:
+                    success = self.bd.actualizar_persona_coop_bd(
+                        persona_coop_id,
+                        monto_esperado=actualizar_bd.get('monto_esperado'),
+                        estado=actualizar_bd.get('estado'),
+                        notas=actualizar_bd.get('notas')
+                    )
+                    
+                    if not success:
+                        registrar_error('control_pagos', 'on_persona_editada', 'No se actualizó en BD')
+            
+            # Guardar datos en memoria
             self.guardar_datos(mostrar_alerta=False)
             self.actualizar_tabla()
             self.actualizar_totales()
@@ -1624,6 +1740,13 @@ class SistemaControlPagos:
                 'usuario': usuario
             }, usuario)
             
+            # Eliminar de cooperación en BD (pero mantener en censo)
+            persona_coop_id = persona.get('persona_coop_id')
+            if persona_coop_id:
+                success = self.bd.eliminar_persona_coop_bd(persona_coop_id)
+                if not success:
+                    registrar_error('control_pagos', 'eliminar_persona', 'No se eliminó de BD')
+            
             # Eliminar después de guardar backup
             self.personas.pop(index)
             self.actualizar_tabla()
@@ -1655,6 +1778,21 @@ class SistemaControlPagos:
         
         # Callback para cuando se registre el pago exitosamente
         def on_pago_registrado(persona, monto_pago, nuevo_total, monto_esperado):
+            # Insertar pago en BD SQLite
+            persona_coop_id = persona.get('persona_coop_id')
+            if persona_coop_id:
+                pago_id = self.bd.registrar_pago_coop_bd(
+                    persona_coop_id,
+                    monto_pago,
+                    datetime.now().strftime("%d/%m/%Y"),
+                    datetime.now().strftime("%H:%M:%S"),
+                    'Pago cooperación',
+                    registrado_por=None  # Usuario actual ID si está disponible
+                )
+                
+                if pago_id is None:
+                    registrar_error('control_pagos', 'on_pago_registrado', 'Pago no se guardó en BD')
+            
             # Refrescar datos y UI
             self.actualizar_totales()
             self.guardar_datos(mostrar_alerta=False)
@@ -1851,7 +1989,7 @@ class SistemaControlPagos:
         self.actualizar_totales()
         self._actualizar_contador_resultados()
     
-    def actualizar_tabla(self):
+    def actualizar_tabla(self, personas_mostrar=None):
         # Importar GestorEstadoPago para usar lógica centralizada (BUG FIX #1 y #4)
         from src.modules.pagos.pagos_estado import GestorEstadoPago
         
@@ -1871,14 +2009,16 @@ class SistemaControlPagos:
         # Filtrar personas si hay búsqueda activa (optimizado)
         criterio = self.search_box.get().strip().lower() if hasattr(self, 'search_box') else ''
         
-        if criterio:
-            personas_mostrar = [
-                p for p in self.personas 
-                if criterio in p.get('nombre', 'SIN-NOMBRE').lower() or 
-                   criterio in p.get('folio', 'SIN-FOLIO').lower()
-            ]
-        else:
-            personas_mostrar = self.personas
+        # Permitir pasar una lista ya filtrada/ordenada; si no, calcular aquí
+        if personas_mostrar is None:
+            if criterio:
+                personas_mostrar = [
+                    p for p in self.personas 
+                    if criterio in p.get('nombre', 'SIN-NOMBRE').lower() or 
+                       criterio in p.get('folio', 'SIN-FOLIO').lower()
+                ]
+            else:
+                personas_mostrar = self.personas
         
         # Agregar personas
         for idx, persona in enumerate(personas_mostrar):
@@ -1902,7 +2042,6 @@ class SistemaControlPagos:
             datos_estado = GestorEstadoPago.obtener_datos_estado(estado_clave)
             
             estado = datos_estado['nombre']
-            indicador = datos_estado['emoji'] + ' '
             
             # Obtener fecha del último pago
             ultimo_pago = ''
@@ -1914,8 +2053,8 @@ class SistemaControlPagos:
             row_tag = 'fila_par' if idx % 2 == 0 else 'fila_impar'
             
             self.tree.insert('', tk.END, iid=iid,
-                           values=(persona.get('folio', 'SIN-FOLIO'),
-                                  indicador + persona['nombre'],
+                              values=(persona.get('folio', 'SIN-FOLIO'),
+                                  persona['nombre'],
                                   f"${monto_esperado:.2f}",
                                   f"${total_pagado:.2f}",
                                   f"${pendiente:.2f}",
@@ -2004,17 +2143,16 @@ class SistemaControlPagos:
     
     def _ordenar_tabla_por_columna(self, col_name):
         """Ordena la tabla por la columna especificada y actualiza los headers"""
-        # Convertir datos mostrados a lista para ordenar
-        items_mostrados = list(self.tree.get_children())
-        personas_mostradas = []
-        
-        for iid in items_mostrados:
-            # Encontrar persona correspondiente
-            folio = self.tree.item(iid)['values'][0]
-            for p in self.personas:
-                if p.get('folio', 'SIN-FOLIO') == folio:
-                    personas_mostradas.append(p)
-                    break
+        # Usar datos en memoria con el criterio actual (evitar leer desde la UI)
+        criterio = self.search_box.get().strip().lower() if hasattr(self, 'search_box') else ''
+        if criterio:
+            personas_mostradas = [
+                p for p in self.personas 
+                if criterio in p.get('nombre', 'SIN-NOMBRE').lower() or 
+                   criterio in p.get('folio', 'SIN-FOLIO').lower()
+            ]
+        else:
+            personas_mostradas = list(self.personas)
         
         # Función para obtener valor de ordenamiento
         def get_sort_key(persona):
@@ -2048,14 +2186,11 @@ class SistemaControlPagos:
                 return persona.get('notas', '').lower()
             return ''
         
-        # Ordenar
+        # Ordenar (solo vista)
         personas_mostradas.sort(key=get_sort_key, reverse=not self.orden_ascendente)
         
-        # Guardar orden en lista principal
-        self.personas = personas_mostradas
-        
-        # Actualizar tabla con nuevo orden
-        self.actualizar_tabla()
+        # Actualizar tabla con nuevo orden sin modificar la lista principal
+        self.actualizar_tabla(personas_mostradas)
         
         # Actualizar headers con indicadores visuales
         self._actualizar_headers_ordenamiento(col_name)
@@ -2242,16 +2377,6 @@ class SistemaControlPagos:
         """Ya no carga desde JSON, todo viene de BD en _cargar_cooperaciones_bd()"""
         pass
     
-    def guardar_datos(self, mostrar_alerta=True, inmediato=False):
-        """Guarda datos en BD SQLite (ya no usa JSON)"""
-        try:
-            # Los datos ya se guardan en BD mediante transacciones
-            # Esta función ahora es un placeholder por compatibilidad
-            if mostrar_alerta:
-                messagebox.showinfo("Guardado", "Datos guardados en BD")
-        except Exception as e:
-            registrar_error('control_pagos', 'guardar_datos', str(e))
-    
     def exportar_excel(self):
         """Exportar cooperación actual a Excel"""
         if not self._tiene_permiso('exportar'):
@@ -2278,17 +2403,27 @@ class SistemaControlPagos:
             if not archivo:
                 return  # Usuario canceló
             
-            # Exportar usando el módulo exportador
+            # Exportar usando el módulo exportador (guarda en carpeta de reportes)
             exportador = ExportadorExcel()
             ruta_archivo = exportador.exportar_personas_cooperacion(
                 self.personas, nombre_coop, os.path.basename(archivo)
             )
-            
+
+            # Si el usuario eligió una ruta distinta, copiar el archivo generado
+            destino_usuario = archivo
+            if ruta_archivo and destino_usuario and os.path.abspath(ruta_archivo) != os.path.abspath(destino_usuario):
+                try:
+                    shutil.copyfile(ruta_archivo, destino_usuario)
+                    ruta_archivo = destino_usuario
+                except Exception:
+                    # Si falla la copia, mantener la ruta original y continuar
+                    pass
+
             if ruta_archivo and os.path.exists(ruta_archivo):
                 registrar_operacion('EXPORTAR_EXCEL', 'Datos exportados a Excel', 
                     {'cooperacion': nombre_coop, 'archivo': ruta_archivo, 'total_personas': len(self.personas)},
                     self.usuario_actual['nombre'] if self.usuario_actual else 'Sistema')
-                messagebox.showinfo("✓ Éxito", 
+                messagebox.showinfo("Éxito", 
                     f"Datos exportados correctamente\n\n"
                     f"Cooperación: {nombre_coop}\n"
                     f"Total personas: {len(self.personas)}\n"
